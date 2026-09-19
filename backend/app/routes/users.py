@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app import services
 from app.db import get_db
-from app.models import Address, User
+from app.models import User
+from app.routes.shared import address_to_dict
 from app.schemas import AddressIn, LoginIn, UserIn
 
 router = APIRouter(tags=["users"])
@@ -30,6 +31,21 @@ def current_user(
     if user is None:
         raise HTTPException(401, "Invalid or expired token")
     return user
+
+
+def optional_user(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """The signed-in user, or None for somebody buying without an account.
+
+    No header at all means a guest, which is allowed. A header that IS there and does not
+    work is a different thing: somebody tried to say who they were and failed, and
+    quietly serving them as a guest would hide an expired session instead of showing it.
+    """
+    if authorization is None:
+        return None
+    return current_user(authorization, db)
 
 
 def user_to_dict(user: User) -> dict:
@@ -72,21 +88,6 @@ def me(user: User = Depends(current_user)):
     return user_to_dict(user)
 
 
-def address_to_dict(address: Address) -> dict:
-    return {
-        "id": address.id,
-        # The API says "shipping" / "billing" rather than a true/false that the reader has
-        # to decode. The column is a boolean because two kinds is all there is; the answer
-        # is a word because that is what the screen and the address bar are made of.
-        "kind": "billing" if address.is_billing else "shipping",
-        "recipient_name": address.recipient_name,
-        "street": address.street,
-        "city": address.city,
-        "postal_code": address.postal_code,
-        "country": address.country,
-    }
-
-
 @router.get("/me/addresses")
 def list_addresses(user: User = Depends(current_user), db: Session = Depends(get_db)):
     return [address_to_dict(a) for a in services.list_addresses(db, user)]
@@ -113,5 +114,7 @@ def delete_address(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if not services.delete_address(db, user, kind == "billing"):
+    # The row is not removed, only retired: an order may point at it, and the foreign key
+    # is there to stop that order losing the address it was actually sent to.
+    if not services.deactivate_address(db, user, kind == "billing"):
         raise HTTPException(404, f"No {kind} address to delete")
