@@ -9,7 +9,7 @@ ni pantallas de checkpoints posteriores. Cada checkpoint termina con un commit y
 | `cp1-catalog` | `001_products` … `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga al hacer scroll, ficheros estáticos y un cambio de modelo en dos mitades (EXPAND-CONTRACT) |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) |
 | `cp3-users` | `003_users` … `003c_orders_user` | Registro, acceso, sesiones, direcciones con histórico y el pedido que sabe de quién es y a dónde va |
-| **`cp4-tests`** | **ninguna** | **Convertir en tests todo lo que hasta ahora se comprobaba a mano** |
+| **`cp4-tests`** | **ninguna** | **Convertir en tests todo lo que hasta ahora se comprobaba a mano, en tres capas** |
 | `cp5-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` |
 
 > **cp4 es el único checkpoint sin migración.** No toca el esquema: no añade
@@ -88,7 +88,7 @@ observabilidad y subida de imágenes por la API. Un pedido nace en estado `paid`
 | Backend | Python 3.12 · FastAPI · SQLAlchemy 2.0 (estilo `Mapped`) · Alembic · `psycopg[binary]` 3 · uvicorn · `pydantic[email]` · `python-dotenv` |
 | Frontend | Vite · React 18 · TypeScript · `react-router-dom` (desde cp2) · un `styles.css` |
 | Contenedores | Un único `docker-compose.yml` con **todos** los servicios: `db`, `backend` (`python:3.12-slim`) y `frontend` (`node:22-alpine`) |
-| Tests (cp4) | `pytest` · `httpx` (para el `TestClient` de FastAPI) en el backend · `vitest` + `@testing-library/react` en el frontend |
+| Tests (cp4) | `pytest` · `httpx2` (lo que mueve el `TestClient` de FastAPI, y el cliente de los de extremo a extremo) en el backend · `vitest` + `@testing-library/react` sobre `jsdom` en el frontend |
 
 **Fuente de verdad del esquema: los modelos SQLAlchemy.** Alembic genera las migraciones
 comparándolos con la base de datos (`--autogenerate`), y a mano se añade lo que
@@ -130,7 +130,9 @@ tienda/
 │   │   ├── services.py       # C: reglas de negocio, funciones con Session
 │   │   ├── security.py       # hash_password, verify_password
 │   │   └── routes/           # V: products, categories, cart, orders, users, shared
-│   └── tests/                # cp4
+│   ├── tests/                # cp4: servicios y API, en proceso
+│   └── requirements-dev.txt · pytest.ini
+├── e2e/                      # cp4: la tienda levantada, solo HTTP y SQL. NO importa app
 └── frontend/
     ├── Dockerfile · .dockerignore · package.json · vite.config.ts · tsconfig.json
     └── src/
@@ -139,7 +141,8 @@ tienda/
         ├── cart.tsx          # CartProvider / useCart
         ├── session.tsx       # SessionProvider / useSession
         ├── format.ts · styles.css · main.tsx · App.tsx
-        ├── components/
+        ├── setupTests.ts     # cp4: doble de IntersectionObserver, que jsdom no trae
+        ├── components/       # *.test.tsx junto al componente que prueban
         └── pages/
 ```
 
@@ -674,7 +677,47 @@ Con `vitest` y `@testing-library/react`. Se prueba **comportamiento**, nunca la 
 
 No se prueban `formatPrice` ni el `Header`: no tienen ninguna forma de romperse en silencio.
 
-### 7.8 Cómo se ejecutan
+### 7.8 De extremo a extremo: pocos, y sin navegador
+
+Una tercera capa, en `e2e/`, contra la tienda **realmente levantada**. Solo HTTP y SQL: no se automatiza
+un navegador. Lo que se gana con un navegador —que los componentes reaccionen— ya lo cubre §7.7; lo que
+**solo** se puede ver con todo encendido es que las piezas estén conectadas, y para eso basta con hablar
+por la red.
+
+La regla que las hace distintas, y hay que decirla en voz alta:
+
+> **Ninguno importa la aplicación.** Ni un solo `from app import ...`.
+
+Un test que importa el código que prueba puede pasar mientras los contenedores están mal conectados, las
+migraciones no se han ejecutado o el CORS apunta a otra dirección.
+
+Qué cazan que las otras dos capas no pueden:
+
+- Que el **CORS** nombre la dirección desde la que se sirve el frontend de verdad. Bien en el fichero y
+  mal en el entorno es una tienda que a `curl` le parece perfecta y en un navegador no funciona.
+- Que la petición **OPTIONS** previa al `PUT` se conteste; si no, no se puede añadir nada al carrito.
+- Que las **imágenes** que la API promete se puedan descargar: el volumen está montado de verdad.
+- Que las **migraciones** se hayan aplicado en la base real al arrancar.
+- Que el **frontend** se esté sirviendo.
+
+Escriben en la base de datos de desarrollo, porque es la que usa la tienda. Así que traen **su propio
+producto y su propio cliente**, y se los llevan al terminar: el stock de los 36 de siempre no se toca.
+Si no hay nada levantado se **saltan** con un mensaje que lo explica; pero un backend que responde con el
+frontend caído es media tienda desplegada, y eso **falla**.
+
+### 7.9 La pirámide, con los números de este proyecto
+
+| Capa | Cuántos | Qué prueba | Cuando falla |
+|---|---|---|---|
+| Backend | 128 | Las reglas | Rápido, y señala la línea |
+| Frontend | 24 | Lo que se rompe en silencio | Rápido |
+| Extremo a extremo | 15 | Que las piezas encajan | Lento, y dice «algo falla» sin decir dónde |
+
+Al subir en la tabla los tests son más lentos, más frágiles y más vagos al fallar. Por eso arriba hay
+quince y no doscientos: **solo sube lo que no se puede comprobar más abajo**. Es el argumento de la
+sesión 7 con cifras propias en vez de con un dibujo.
+
+### 7.10 Cómo se ejecutan
 
 ```bash
 cd backend && .venv/Scripts/activate && pytest -q
@@ -684,10 +727,14 @@ cd backend && .venv/Scripts/activate && pytest -q
 cd frontend && npm test
 ```
 
+```bash
+docker compose up -d && cd e2e && ../backend/.venv/Scripts/python -m pytest
+```
+
 Y en el README, la razón de que no haya CI: está fuera de alcance (§0.6), así que los tests
 se ejecutan a mano antes de cada tag. La regla §9.5 pasa a incluirlos.
 
-### 7.9 Hecho cuando
+### 7.11 Hecho cuando
 
 - `pytest` pasa entero, desde una base `shop_test` que no existía.
 - Cada uno de los «Hecho cuando» de cp1, cp2 y cp3 tiene un test que lo comprueba.

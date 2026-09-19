@@ -268,9 +268,47 @@ claro.
 > catálogo se comporta como en una pantalla alta: sigue pidiendo páginas hasta que el servidor dice que no
 > hay más.
 
-> **Lo que todavía no está:** tests de extremo a extremo con navegador. Los de aquí prueban el frontend
-> contra una API simulada y el backend contra una base de datos de verdad, pero nada recorre la tienda
-> entera de una vez.
+### De extremo a extremo
+
+Con la tienda levantada, desde `e2e/`:
+
+```bash
+docker compose up -d
+```
+
+```bash
+cd e2e && ../backend/.venv/Scripts/python -m pytest
+```
+
+Si la tienda no está arrancada, se saltan con un mensaje que lo dice, en vez de fallar quince veces.
+
+Son **15 y hablan solo HTTP y SQL**: no hay navegador. La regla que los define está en
+[`e2e/conftest.py`](e2e/conftest.py) y conviene leerla antes que los tests:
+
+> **Ninguno importa la aplicación.** Ni un solo `from app import ...`.
+
+Un test que importa el código que prueba puede pasar mientras los contenedores están mal conectados, las
+migraciones no se han ejecutado, el CORS apunta a otro sitio o las imágenes no se están sirviendo. Eso es
+justo lo que esta capa existe para cazar.
+
+**Prueba de que sirven:** con `CORS_ORIGINS` apuntando a una dirección equivocada, los 152 tests de backend
+y frontend pasan igual y **estos dos fallan**. Con el contenedor del frontend parado, falla el que comprueba
+que se está sirviendo. La tienda estaría rota en cualquier navegador y nada más se habría enterado.
+
+**Escriben en la base de datos de verdad**, porque es la que usa la tienda en marcha. Por eso traen **su
+propio producto y su propio cliente** y se los llevan al terminar: los 36 productos de siempre no se tocan y
+el stock no queda cambiado. Comprobado ejecutándolos dos veces seguidas: la base queda idéntica.
+
+### Por qué tan pocos de cada capa
+
+| Capa | Cuántos | Qué prueba | Coste de un fallo |
+|---|---|---|---|
+| Backend | 128 | Las reglas: stock, precios, propiedad, migraciones | Rápido y señala la línea |
+| Frontend | 24 | Tres comportamientos que se rompen en silencio | Rápido |
+| Extremo a extremo | 15 | Que las piezas están conectadas | Lento, y dice «algo falla» sin decir dónde |
+
+Cuantos más se suba en la tabla, más lentos y más vagos son los mensajes. Por eso arriba hay quince y no
+doscientos: aquí solo va lo que **no se puede comprobar de ninguna otra forma**.
 
 ## Checkpoints
 
