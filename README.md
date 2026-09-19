@@ -205,7 +205,8 @@ curl -s "http://localhost:8000/categories"
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
 | `cp3-users` | de `003_users` a `003c_orders_user` | Registro, acceso, sesiones, direcciones, y el pedido con dueño y destino | en curso |
-| `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
+| `cp4-tests` | ninguna | Convertir en tests todo lo que hasta ahora se comprobaba a mano | pendiente |
+| `cp5-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
 Para ver el código de un checkpoint concreto: `git checkout cp1-catalog` (y `git checkout main` para volver).
 
@@ -463,7 +464,6 @@ Se dejan fuera a propósito (no se implementan):
 - Pasarela de pago (un pedido nace ya en estado `paid`)
 - Roles y permisos
 - Imágenes de producción (los contenedores de la aplicación arrancan los servidores de desarrollo)
-- CI
+- CI (los tests del cp4 se ejecutan a mano antes de cada tag)
 - Observabilidad
-- Tests automáticos
 - Subir imágenes a través de la API (se colocan a mano en `data/images/`)
