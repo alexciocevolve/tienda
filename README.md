@@ -204,7 +204,7 @@ curl -s "http://localhost:8000/categories"
 |---|---|---|---|
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
-| `cp3-users` | `003_users_and_addresses` | Usuario, dirección de envío y de facturación, registro y login | pendiente |
+| `cp3-users` | `003_users` | Registro, acceso y sesiones (las direcciones quedan para más adelante) | en curso |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
 Para ver el código de un checkpoint concreto: `git checkout cp1-catalog` (y `git checkout main` para volver).
@@ -325,6 +325,39 @@ docker compose exec db psql -U shop -d shop
 > [`backend/app/config.py`](backend/app/config.py) como `PLACEHOLDER_CUSTOMER_EMAIL`. Por eso `POST /orders`
 > no lleva cuerpo: los precios, el total y el comprador los decide el servidor. El registro, la
 > autenticación y la asignación real del pedido llegan en el checkpoint siguiente.
+
+### cp3 · Registro y acceso
+
+1. Abrir [`models.py`](backend/app/models.py) y buscar dónde se guarda la contraseña. **No está.** Hay una
+   columna `password_hash` y ningún sitio donde quepa una contraseña: eso no es un olvido, es el diseño.
+2. Registrarse en la pantalla y mirar después la tabla en psql. Lo que hay es `scrypt$<sal>$<hash>`:
+
+   ```bash
+   docker compose exec db psql -U shop -d shop -c "SELECT email, left(password_hash, 30) FROM users"
+   ```
+
+   Registrar a dos personas **con la misma contraseña** y comparar: los hashes son distintos, porque cada
+   uno lleva su propia sal. Por eso una tabla de hashes precalculados no sirve de nada.
+3. Equivocarse de contraseña, y luego probar con un email que no existe. **El mensaje es el mismo**:
+   *"Invalid email or password"*. Si dijera "ese email no está registrado", el formulario de acceso sería
+   una forma de averiguar quién compra aquí. Y tardan lo mismo, porque el servidor hace el trabajo de
+   comprobar el hash también cuando no hay usuario.
+4. La contraseña en el navegador, con las herramientas de desarrollo abiertas:
+   - `type="password"`, y el botón **Show** para verla cuando hace falta.
+   - Si el campo estuviera controlado por React, la contraseña acabaría en el atributo `value` del HTML, y
+     cualquier cosa que serialice el DOM se la llevaría en claro. Por eso el campo es **no controlado** y se
+     lee del elemento al enviar. Se puede comprobar en la consola: `$0.getAttribute('value')` da `null`.
+   - `autocomplete="username"` y `autocomplete="current-password"` / `"new-password"`: es lo que hace que un
+     gestor de contraseñas guarde y rellene bien, y que el navegador no meta la contraseña vieja en el campo
+     de la nueva.
+   - Aviso de **Caps Lock**, que es la causa más común de que una contraseña correcta sea rechazada.
+5. Cerrar sesión y mirar la tabla `sessions`: la fila **se ha borrado**. Olvidar el token solo en el
+   navegador dejaría al token vivo 24 horas para quien lo hubiera copiado.
+6. Una sesión caducada: la fila sigue existiendo y aun así el token ya no vale, porque lo que manda es la
+   fecha, no la existencia de la fila.
+
+> **Todavía no hay direcciones ni pedidos asignados.** Este paso es solo la cuenta: registro, acceso y
+> sesión. Los pedidos siguen yendo al cliente de prueba de cp2.
 
 ## Fuera de alcance
 

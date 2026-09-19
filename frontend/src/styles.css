@@ -388,3 +388,206 @@ tfoot td {
 .checkout .status {
   padding: 0;
 }
+
+/* Header navigation and the account dropdown */
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.account {
+  position: relative;
+}
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 10px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.account-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.caret {
+  font-size: 0.7rem;
+}
+
+.account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  min-width: 220px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(16 24 40 / 0.12);
+}
+
+.account-menu button {
+  display: block;
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.account-menu button:hover {
+  background: #f2f5fb;
+  color: var(--accent);
+}
+
+.account-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Sign in / create account */
+.auth {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tabs .chip[aria-selected="true"] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.auth form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.auth h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.field input {
+  font: inherit;
+  padding: 9px 10px;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The reveal button sits inside the box, so it reads as part of the field */
+.password-input {
+  display: flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.password-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.password-input input {
+  flex: 1;
+  border: 0;
+  /* A password is not proportional text: a fixed pitch makes it much easier to check
+     what was typed while it is showing. */
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+
+.password-input input:focus-visible {
+  outline: none;
+}
+
+.reveal {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0 12px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.reveal:hover,
+.reveal[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Always in the layout, empty when there is nothing to say, so the form does not jump */
+.field-warning {
+  min-height: 1.1rem;
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #b54708;
+}
+
+.auth .status.error {
+  padding: 8px 0 0;
+}
+
+.auth .primary {
+  align-self: stretch;
+  margin-top: 12px;
+  text-align: center;
+}
