@@ -36,6 +36,12 @@ services:
       # Which pages may call the API. Taken from .env (or the shell); if it is not there,
       # the Vite dev server of this same compose file.
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      IMAGES_DIR: /app/images # where the volume below is mounted; the API serves it at /images
+    volumes:
+      # Product images, a bind mount like the database so the files are visible on your
+      # machine: ./data/images. Read-only: the API only serves them. To add or replace
+      # an image, put the file in that folder; no rebuild or restart is needed.
+      - ./data/images:/app/images:ro
     depends_on:
       db:
         condition: service_healthy # do not start (and migrate) until PostgreSQL accepts connections

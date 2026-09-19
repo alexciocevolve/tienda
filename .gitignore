@@ -1,8 +1,9 @@
 # Secrets: .env.example is the committed template, .env is yours
 .env
 
-# PostgreSQL data files (bind-mounted by docker-compose.yml)
-data/
+# PostgreSQL data files (bind-mounted by docker-compose.yml). data/images is NOT ignored:
+# it holds the seed product images, which belong to the repository.
+data/postgres/
 
 # Python
 .venv/
