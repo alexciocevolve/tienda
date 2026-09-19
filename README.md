@@ -10,8 +10,8 @@ completo (requisitos, decisiones y guion de clase) está en [`PLAN.md`](PLAN.md)
 ## Requisitos
 
 - Docker (con Compose)
-- Python 3.12 o superior
-- Node.js 20 o superior
+- Python 3.12 o superior (solo para la opción B)
+- Node.js 20.19 o superior, o 22.12 o superior (solo para la opción B; lo exige Vite)
 
 ## Arranque
 
@@ -21,10 +21,32 @@ Copia la plantilla de variables de entorno (el `.env` real no se sube a Git):
 cp .env.example .env
 ```
 
-Base de datos (solo el servicio `db`; el esquema lo crea Alembic, no Docker):
+### Opción A · Todo con Docker
+
+Un solo comando construye y levanta la base de datos, el backend (que aplica las migraciones al
+arrancar) y el frontend:
 
 ```bash
-docker compose up -d
+docker compose up --build
+```
+
+| Servicio | Dirección |
+|---|---|
+| Frontend | `http://localhost:5173` |
+| Backend | `http://localhost:8000` (documentación interactiva en `/docs`) |
+| PostgreSQL | `localhost:5432` |
+
+Para parar todo conservando los datos: `docker compose down`. Con `docker compose down -v` se borra
+también la base de datos. El código va dentro de las imágenes: tras cambiarlo hay que repetir
+`docker compose up --build`. Para trabajar con recarga en caliente, usa la opción B.
+
+### Opción B · Desarrollo local
+
+Solo la base de datos en Docker (el esquema lo crea Alembic, no Docker). Atención: `docker compose up -d`
+**sin** nombre de servicio levantaría también el backend y el frontend, y ocuparían los puertos 8000 y 5173:
+
+```bash
+docker compose up -d db
 ```
 
 Backend, en `http://localhost:8000` (documentación interactiva en `/docs`):
@@ -121,7 +143,7 @@ Se dejan fuera a propósito (no se implementan):
 
 - Pasarela de pago (un pedido nace ya en estado `paid`)
 - Roles y permisos
-- Docker para la aplicación (solo la base de datos va en Docker)
+- Imágenes de producción (los contenedores de la aplicación arrancan los servidores de desarrollo)
 - CI
 - Observabilidad
 - Tests automáticos

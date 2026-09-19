@@ -1,6 +1,11 @@
-# Only the database runs in Docker. The schema is NOT created here (no
-# docker-entrypoint-initdb.d): Alembic owns it, so every change is a versioned migration.
+# The whole shop with one command:   docker compose up --build
+#   frontend -> http://localhost:5173      backend -> http://localhost:8000 (docs at /docs)
+#
+# To work on the code with hot reload, run only the database here (docker compose up -d db)
+# and start the backend and the frontend by hand, as the README explains.
 services:
+  # No docker-entrypoint-initdb.d on purpose: the schema is NOT created here.
+  # Alembic owns it, so every change is a versioned migration.
   db:
     image: postgres:16-alpine
     environment:
@@ -16,6 +21,39 @@ services:
       retries: 10
     ports:
       - "5432:5432" # development only: never publish a database port in production
+
+  backend:
+    build: ./backend
+    environment:
+      # Inside the Compose network the database is reached by its service name (db),
+      # not by localhost. This overrides the DATABASE_URL of .env, which is for running
+      # the backend by hand on your machine.
+      DATABASE_URL: postgresql+psycopg://shop:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing in .env}@db:5432/shop
+    depends_on:
+      db:
+        condition: service_healthy # do not start (and migrate) until PostgreSQL accepts connections
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s # the migration runs before the server starts
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    ports:
+      - "5173:5173" # the API only allows this origin (CORS)
 
 volumes:
   shop_pgdata:
