@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import CORS_ORIGINS, IMAGES_DIR
-from app.routes import cart, categories, orders, products
+from app.routes import cart, categories, orders, products, users
 
 app = FastAPI(title="Shop API")
 
@@ -28,6 +28,7 @@ app.include_router(cart.router)
 app.include_router(categories.router)
 app.include_router(orders.router)
 app.include_router(products.router)
+app.include_router(users.router)
 
 # Static files: GET /images/product-1.svg returns that file from IMAGES_DIR. No route
 # function, no database: the server just reads the file and sends it (with ETag and
