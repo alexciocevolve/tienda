@@ -49,12 +49,17 @@ main {
 .chip {
   font: inherit;
   padding: 6px 14px;
-  text-transform: capitalize;
   color: inherit;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 999px;
   cursor: pointer;
+}
+
+/* Only the category buttons: the names come from the database in lower case
+   ("laptops") and are shown capitalised. Other buttons using .chip keep their own text. */
+.filters .chip {
+  text-transform: capitalize;
 }
 
 .chip[aria-pressed="true"] {

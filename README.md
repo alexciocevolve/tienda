@@ -112,16 +112,16 @@ curl -i "http://localhost:8000/products?limit=1" -H "Origin: http://localhost:51
 Las imágenes son ficheros estáticos que sirve la propia API, no algo que se guarde en la base de datos:
 
 ```
-data/images/product-1.svg   ── volumen (bind mount, solo lectura) ──▶   /app/images en el contenedor
+data/images/product-1.jpg   ── volumen (bind mount, solo lectura) ──▶   /app/images en el contenedor
                                                                               │  StaticFiles
-navegador  ──  GET http://localhost:8000/images/product-1.svg  ◀────────────────┘
+navegador  ──  GET http://localhost:8000/images/product-1.jpg  ◀────────────────┘
 ```
 
 1. La base de datos guarda **dónde está** la imagen respecto al servidor: `products.image_url =
-   '/images/product-1.svg'`. No guarda un dominio, así que los mismos datos valen en `localhost` y en
+   '/images/product-1.jpg'`. No guarda un dominio, así que los mismos datos valen en `localhost` y en
    producción.
 2. La API (`GET /products`) devuelve la dirección **completa**, construida con la dirección por la que
-   llegó la petición: `"image_url": "http://localhost:8000/images/product-1.svg"`. Es lo que hay que pedir.
+   llegó la petición: `"image_url": "http://localhost:8000/images/product-1.jpg"`. Es lo que hay que pedir.
 3. El navegador hace un `GET` normal a esa dirección y `StaticFiles` (en `main.py`) lee el fichero de la
    carpeta y lo devuelve, con `ETag` para poder contestar `304` si no ha cambiado. No hay función de ruta ni
    consulta a la base de datos.
@@ -129,20 +129,34 @@ navegador  ──  GET http://localhost:8000/images/product-1.svg  ◀───�
 Como el frontend solo usa `product.image_url` como `src` de la etiqueta `<img>`, no sabe nada de todo esto.
 Cargar una imagen de otro origen con `<img>` tampoco necesita CORS.
 
-Los 36 ficheros de `data/images/` son ilustraciones de relleno (color e icono por categoría). Para poner una
-foto real, copia un fichero con el mismo nombre en esa carpeta (o pon otro y cambia `image_url`); se sirve al
-momento, sin reiniciar ni reconstruir nada. La carpeta **sí** se sube a Git (son datos de arranque, como los
-productos de la migración `001_products`); la de la base de datos, `data/postgres/`, no.
+En `data/images/` hay dos juegos de imágenes: las fotografías `product-<id>.jpg`, que son las que se ven, y
+las ilustraciones `product-<id>.svg` (color e icono por categoría) que se generaron primero y siguen ahí para
+que el `downgrade` de la migración tenga a qué volver. Para cambiar una imagen, copia un fichero con el mismo
+nombre en esa carpeta; se sirve al momento, sin reiniciar ni reconstruir nada.
 
-La revisión `001a_product_images` es la que cambia los productos de las URLs externas (`picsum.photos`) a
-`/images/product-<id>.svg`. No cambia el esquema, solo los datos, así que está escrita a mano (autogenerate
-compara esquemas, no datos), y su `downgrade` lo deja como estaba.
+La carpeta **sí** se sube a Git, porque es un dato de arranque igual que los productos de la migración
+`001_products`: si no estuviera, quien clonara el repositorio vería las imágenes rotas, ya que la base de
+datos nombra ficheros que no existirían. Por eso `.gitignore` ignora todo `data/` **menos** `data/images/`.
+La carpeta de la base de datos, `data/postgres/`, sí se ignora.
+
+> **Licencias.** Las fotografías proceden de Wikimedia Commons y Openverse, y varias son CC BY o CC BY-SA,
+> que **exigen atribución visible**. La tabla con autor, licencia y origen de cada una está en
+> [`data/images/CREDITS.md`](data/images/CREDITS.md); revísala antes de publicar la tienda en internet.
+
+Dos revisiones mueven las imágenes, y ninguna cambia el esquema (solo los datos), así que las dos están
+escritas a mano: autogenerate compara esquemas, no datos. Las dos tienen `downgrade`, así que se puede ir y
+volver:
+
+| Revisión | Deja `image_url` en |
+|---|---|
+| `001a_product_images` | `/images/product-<id>.svg`, en vez de las URLs externas de `picsum.photos` |
+| `001b_product_images_jpg` | `/images/product-<id>.jpg`, las fotografías |
 
 ## Checkpoints
 
 | Tag | Revisión Alembic | Qué se enseña | Estado |
 |---|---|---|---|
-| `cp1-catalog` | `001_products` y `001a_product_images` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
+| `cp1-catalog` | `001_products`, `001a_product_images` y `001b_product_images_jpg` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | pendiente |
 | `cp3-users` | `003_users_and_addresses` | Usuario, dirección de envío y de facturación, registro y login | pendiente |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
@@ -214,7 +228,7 @@ docker compose exec db psql -U shop -d shop
    ```
 
    ```bash
-   curl -i "http://localhost:8000/images/product-1.svg"
+   curl -i "http://localhost:8000/images/product-1.jpg"
    ```
 5. Navegador con la pestaña **Red** abierta: bajar y ver las **tres** peticiones a `/products`
    (`cursor=0`, `cursor=12`, `cursor=24`) y las imágenes llegando después. Son dos mecanismos distintos:

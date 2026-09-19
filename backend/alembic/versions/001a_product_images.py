@@ -8,7 +8,8 @@ Create Date: 2026-09-19 14:43:27.385192
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
+# No `import sqlalchemy as sa` here, unlike 001_products: this revision only runs SQL
+# through op.execute() and never builds a column or a type, so it would be an unused import.
 
 
 # revision identifiers, used by Alembic.

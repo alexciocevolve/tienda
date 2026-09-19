@@ -18,6 +18,7 @@ CORS_ORIGINS = [
 ]
 
 # Folder with the product images; the API serves it as static files under /images.
-# By default it is data/images at the root of the repository. Docker mounts that folder
-# somewhere else inside the container and sets IMAGES_DIR to say where.
-IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", Path(__file__).resolve().parents[2] / "data" / "images"))
+# parents[2] walks up from app/config.py to the root of the repository: app -> backend -> root.
+# Docker mounts that same folder somewhere else and sets IMAGES_DIR to say where.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", REPOSITORY_ROOT / "data" / "images"))
