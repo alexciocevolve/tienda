@@ -591,3 +591,67 @@ tfoot td {
   margin-top: 12px;
   text-align: center;
 }
+
+/* Account page */
+.account-page > h2 {
+  margin: 0 0 4px;
+}
+
+.account-page > .status {
+  padding: 0 0 20px;
+  text-align: left;
+}
+
+.addresses {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.address-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.address-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.address-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Postal code, city and country on one line, with the country only wide enough for two
+   letters so the box itself says how much is expected. */
+.address-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+}
+
+.address-row .field:last-child input {
+  width: 4.5rem;
+  text-transform: uppercase;
+}
+
+.address-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.address-actions .primary {
+  margin-top: 0;
+}

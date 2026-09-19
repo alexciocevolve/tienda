@@ -204,7 +204,7 @@ curl -s "http://localhost:8000/categories"
 |---|---|---|---|
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
-| `cp3-users` | `003_users` | Registro, acceso y sesiones (las direcciones quedan para más adelante) | en curso |
+| `cp3-users` | `003_users` y `003a_addresses` | Registro, acceso, sesiones y direcciones de envío y facturación | en curso |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
 Para ver el código de un checkpoint concreto: `git checkout cp1-catalog` (y `git checkout main` para volver).
@@ -356,8 +356,38 @@ docker compose exec db psql -U shop -d shop
 6. Una sesión caducada: la fila sigue existiendo y aun así el token ya no vale, porque lo que manda es la
    fecha, no la existencia de la fila.
 
-> **Todavía no hay direcciones ni pedidos asignados.** Este paso es solo la cuenta: registro, acceso y
-> sesión. Los pedidos siguen yendo al cliente de prueba de cp2.
+### cp3 · Direcciones de envío y facturación
+
+Cada persona tiene **una dirección de envío y una de facturación**, y se editan en *My account*. El tipo
+de dirección es una **columna** de la propia fila, `is_billing`, no una fila en otra tabla de tipos.
+
+7. Guardar las dos direcciones y mirar la tabla: dos filas, una con `is_billing = f` y otra con `t`.
+
+   ```bash
+   docker compose exec db psql -U shop -d shop -c "SELECT id, user_id, is_billing, street, city FROM addresses"
+   ```
+
+8. Cambiar la dirección de envío y volver a mirar: **la misma fila, con el `id` de antes**. No aparece una
+   segunda. Es lo que hace `PUT /me/addresses/shipping`, que fija lo que esa dirección *es*.
+9. Intentar meter a mano una segunda dirección de facturación para la misma persona: la base de datos la
+   rechaza, porque la regla vive ahí y no en Python.
+
+   ```bash
+   docker compose exec db psql -U shop -d shop -c "INSERT INTO addresses (user_id, is_billing, recipient_name, street, city, postal_code) VALUES (1, true, 'X', 'X', 'X', 'X')"
+   ```
+
+10. `PUT /me/addresses/home` responde `422` sin que corra nada nuestro: los dos únicos valores posibles
+    están declarados en el tipo de la ruta, y salen también en `/docs`.
+11. **El `id` de una dirección no aparece en ninguna ruta.** Todo se resuelve desde la sesión, así que no
+    hay ningún número que cambiar para llegar a la dirección de otra persona.
+
+> **Decisión distinta a la del plan.** `PLAN.md` §6.1 estudia justo este diseño (una tabla de direcciones
+> con su tipo) y lo descarta en favor de direcciones sin tipo cuyo papel se asigna en el pedido. Aquí se
+> ha seguido la otra opción a propósito. Lo que cuesta se ve en el botón *"Copy from shipping"*: usar la
+> misma dirección para las dos cosas guarda las mismas líneas dos veces.
+
+> **Los pedidos todavía no se asignan.** Siguen yendo al cliente de prueba de cp2; enlazar el pedido con
+> el usuario y con sus direcciones es el paso siguiente.
 
 ## Fuera de alcance
 
