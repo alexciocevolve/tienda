@@ -769,9 +769,30 @@ class ProductPriceHistory(Base):
 Se guarda el precio anterior y el nuevo porque una fila registra **una transición**; así no
 hace falta una fila inicial artificial.
 
-### 8.3 Revisión `004_price_history`
+### 8.3 Revisiones `004_price_history` y `004a_price_trigger`
 
-Autogenerate crea la tabla y el índice. **A mano**, después, en `upgrade()`:
+**Dos revisiones y no una.** La tabla se hizo primero y sola: `004` crea `product_price_history`
+y su índice, y **nada la escribe todavía**. Dejar ese hueco a la vista es lo que convierte
+"¿quién rellena esto?" en una pregunta de clase. Cuando llegó el trigger, `004` ya estaba
+aplicada, y editar una migración aplicada es justo lo que §10 dice que no se hace nunca.
+
+`004` salió **entera de autogenerate**, por segunda vez en el proyecto tras `002`, y por el
+mismo motivo: solo crea una tabla vacía. Tampoco apareció el aviso `constraint name is None`,
+porque esta vez la clave foránea lleva su nombre puesto en el modelo.
+
+`004a` es lo contrario: **cada línea escrita a mano**, y lo que produjo `--autogenerate`
+es la lección del checkpoint:
+
+```python
+def upgrade() -> None:
+    pass    # <- esto es todo. Ni error, ni aviso.
+```
+
+Un trigger no está en los modelos ni es algo que Alembic compare, así que no hay nada que
+decir. **No es el esquema que compara ni los datos que ignora: es una tercera categoría que
+no sabe que existe.**
+
+A mano, en `upgrade()`:
 
 ```python
 op.execute("""
@@ -792,40 +813,95 @@ FOR EACH ROW
 WHEN (OLD.price_cents IS DISTINCT FROM NEW.price_cents)
 EXECUTE FUNCTION record_price_change();
 """)
-# Tres cambios de precio desde la propia migración: el histórico no empieza vacío, y
-# demuestra que el trigger funciona sin que la aplicación haga nada.
-op.execute("UPDATE products SET price_cents = 84900 WHERE id = 1")
-op.execute("UPDATE products SET price_cents = 79900 WHERE id = 1")
-op.execute("UPDATE products SET price_cents = 2299  WHERE id = 3")
 ```
 
-Y en `downgrade()`, **antes** del `drop_table` autogenerado:
+Los tres calificadores se ganan su sitio: `AFTER` registra solo lo confirmado, `OF price_cents`
+evita que reponer stock escriba en el histórico de **precios**, y el `WHEN` evita que guardar
+el mismo precio cuente como cambio. `IS DISTINCT FROM` y no `<>`, que con nulos responde
+`NULL` y dejaría agujeros el día que la columna admita nulos.
+
+**PENDIENTE DE DECIDIR:** el plan traía tres `UPDATE` de precio desde la propia migración,
+para que el histórico no empezara vacío. No se han hecho. A favor: la pantalla del §8.4
+tiene algo que enseñar sin que nadie toque nada. En contra: es una migración cambiando
+precios del catálogo. Sin ellos, los 36 productos empiezan con histórico vacío.
+
+Y en `downgrade()`:
 
 ```python
 op.execute("DROP TRIGGER trg_products_price_change ON products")
 op.execute("DROP FUNCTION record_price_change()")
 ```
 
-Punto de clase: sin esas dos líneas el `downgrade` falla, porque el trigger sigue apuntando a
-una tabla que ya no existe. Y el test de §7.6 lo caza solo.
+El trigger **antes** que la función, porque PostgreSQL se niega a borrar una función de la
+que algo depende.
+
+**El punto de clase, corregido después de reproducirlo.** Este plan decía que sin esas dos
+líneas el `downgrade` *falla*. **No falla.** Las dos revisiones se deshacen informando de
+éxito, la tabla desaparece y el trigger y la función se quedan vivos. El fallo llega
+después, en otro momento y a otra persona, con el primer cambio de precio:
+
+```
+ERROR:  relation "product_price_history" does not exist
+CONTEXT:  PL/pgSQL function record_price_change() line 3
+```
+
+Y la tienda sigue **leyendo** perfectamente, así que el catálogo parece sano y solo se rompe
+al escribir un precio. Es el cuarto `downgrade` roto del proyecto y el único que no se
+anuncia: no es una migración rota, es una mina.
+
+El test de §7.6 sí lo caza, y **falla en el `upgrade` siguiente** con
+`DuplicateFunction: function "record_price_change" already exists` — el sitio donde algo
+explota no es el sitio donde está el error.
+
+### 8.3b Que `--autogenerate` sí vea el trigger: `alembic_utils`
+
+Sin ayuda, la comprobación de deriva de §7.6 contesta `[]` **con el trigger puesto y con el
+trigger borrado a mano**: no es silencio, es una aprobación. Con `alembic-utils==0.8.8`, la
+función y el trigger se declaran en `alembic/env.py` como `PGFunction` y `PGTrigger` y se
+registran con `register_entities()`. A partir de ahí autogenerate emite
+`create_entity` / `replace_entity` / `drop_entity`, y el `downgrade` que escribe solo pone el
+trigger antes que la función — el fallo de arriba, resuelto por defecto.
+
+Instalarlo **rompió** el test de deriva (`KeyError: 'include_schemas'`): su comparador queda
+registrado para todo el proceso y ese test llamaba a `compare_metadata()` sin esa opción.
+Añadirla es también la mejora, porque desde entonces la comprobación cubre las entidades.
+
+Aviso: las declaraciones viven en `env.py`, que ejecuta migraciones al importarlo, así que
+nadie más puede importarlo. El test solo las ve porque su fixture ha ejecutado `env.py`
+antes en el mismo proceso — funciona por accidente. Sacarlas a un módulo propio lo haría
+explícito.
 
 ### 8.4 Servicios, rutas y frontend
 
 ```python
 def list_price_history(db, product_id) -> list[ProductPriceHistory] | None   # None si el producto no existe
-def change_price(db, product_id, price_cents) -> Product | None
 ```
 
-`change_price` asigna `product.price_cents` y hace `commit`. **No escribe en
-`product_price_history`**: ese es el punto. Un producto inexistente devuelve `None` (404), no lista
-vacía: dos situaciones distintas, dos respuestas distintas.
+Un producto inexistente devuelve `None` (404), no lista vacía: dos situaciones distintas,
+dos respuestas distintas. Elegir el código de estado es decidir **qué puede distinguir
+quien llama** — y en §6 se tomó la decisión contraria a propósito, porque allí no
+queríamos que distinguiera "no es tuyo" de "no existe".
 
 | Ruta | Cuerpo | Respuesta |
 |---|---|---|
 | `GET /products/{id}/price-history` | — | `200 [{changed_at, previous_price_cents, price_cents}]`, del más antiguo al más reciente; `200 []` si nunca cambió · `404` |
-| `PATCH /products/{id}` | `PriceIn` (`price_cents: int = Field(ge=0)`) | `200` producto · `404` |
 
-`PATCH` sin autenticación (los roles quedan fuera del curso; comentario en la ruta).
+**Y ninguna ruta más. Decisión tomada: el precio no se cambia por el API.**
+
+Este plan traía un `PATCH /products/{id}` y un servicio `change_price`. No entran, y el
+motivo no es falta de tiempo: **esta tienda no tiene interfaz de gestión de productos**. El
+catálogo se administra contra la base de datos, y eso convierte el API en un API de *venta*,
+solo de lectura sobre el catálogo.
+
+La consecuencia es la que sostiene todo el checkpoint, y conviene decirla así en clase:
+
+> Con la gestión hecha contra la base de datos, **ningún cambio de precio pasa jamás por la
+> aplicación**. Un histórico escrito en Python no se perdería "algunos" cambios: no
+> registraría **ninguno**. El trigger deja de ser la opción elegante y pasa a ser la única
+> que existe.
+
+De paso desaparece la deuda que el plan iba a contraer: ya no hay un endpoint que cambie
+precios sin autenticación mientras `POST /orders` exige sesión.
 
 `components/PriceHistory.tsx`: `useData(() => getPriceHistory(id))`; vacío →
 `"This product has not changed price yet."`; tabla `Date · Before · After`. Se monta en el
@@ -834,15 +910,19 @@ modal de detalle, debajo de la descripción.
 ### 8.5 Tests que añade (cp4 ya existe, así que llegan con él)
 
 - Un `UPDATE` del precio en SQL directo, **sin pasar por la aplicación**, crea una fila.
+  Con la gestión hecha contra la base de datos, esto no es un caso raro: es el único caso.
 - El mismo precio otra vez no crea ninguna. Un `UPDATE` del stock tampoco.
-- `PATCH /products/1` deja el histórico en orden.
-- El `downgrade` de `004` funciona (que es donde el test de §7.6 gana su sueldo).
+- El histórico se lee en orden aunque dos cambios compartan `changed_at`, porque `now()` es
+  el inicio de la **transacción** y el desempate lo pone el `id`.
+- El `downgrade` de `004a` funciona (que es donde el test de §7.6 gana su sueldo).
 
 ### 8.6 Hecho cuando
 
 - En psql: `UPDATE products SET price_cents = 74900 WHERE id = 1;` → fila nueva. El mismo `UPDATE` otra vez → nada. `UPDATE ... SET stock = 99` → nada.
 - `GET /products/999/price-history` → 404; producto sin cambios → `200 []`.
-- `alembic downgrade 003c_orders_user` funciona (trigger y función se van) y `upgrade head` vuelve a crear los tres cambios.
+- `alembic downgrade 003c_orders_user` funciona (trigger y función se van, en ese orden) y `upgrade head` los devuelve.
+- `--autogenerate` con el trigger borrado a mano genera `create_entity`; con todo en su sitio, una migración vacía.
+- Ninguna ruta cambia un precio: el catálogo se administra contra la base de datos.
 - Tag `cp5-price-history`.
 
 ---
