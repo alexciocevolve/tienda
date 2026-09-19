@@ -17,7 +17,9 @@ def product_to_dict(p: Product, request: Request) -> dict:
         "id": p.id,
         "name": p.name,
         "description": p.description,
-        "category": p.category,
+        # The table changed, this answer does not: the API promised a name and still sends
+        # one, read now from the related row. Nothing outside the server has to be rewritten.
+        "category": p.category.name,
         "price_cents": p.price_cents,
         "stock": p.stock,
         # How to get the image: a plain GET to this address. The database stores a path

@@ -152,11 +152,57 @@ volver:
 | `001a_product_images` | `/images/product-<id>.svg`, en vez de las URLs externas de `picsum.photos` |
 | `001b_product_images_jpg` | `/images/product-<id>.jpg`, las fotografías |
 
+## Las categorías, en su propia tabla (EXPAND-CONTRACT)
+
+Al principio la categoría era una columna de texto en `products`: el nombre `'laptops'` repetido en ocho
+filas. Ahora es una tabla `categories` y `products.category_id` que la referencia. Así el nombre se guarda
+una sola vez, renombrar una categoría es un `UPDATE`, y una errata no puede inventarse una categoría nueva
+porque la clave foránea la rechaza.
+
+El cambio se hace en **dos migraciones**, no en una, y esa es la lección:
+
+| Revisión | Qué hace | ¿Rompe el código que ya está funcionando? |
+|---|---|---|
+| `001c_categories_expand` | Crea `categories`, la llena con los nombres que ya había y añade `products.category_id` **anulable** | **No.** La columna de texto sigue ahí y sigue siendo la que lee la aplicación |
+| `001d_categories_contract` | Pone `category_id` como obligatoria y **borra** la columna de texto | **Sí.** Todo lo que aún leyera `products.category` deja de funcionar |
+
+Entre las dos hay una parada: el hueco donde se despliega el código nuevo y se comprueba que nadie usa ya
+la columna vieja. Si algo va mal, el `downgrade` de CONTRACT vuelve atrás **con los datos**, porque el
+nombre se puede reconstruir siguiendo la clave foránea. Hacerlo en una sola migración obligaría a parar la
+tienda. Se puede ver el esquema encoger y volver a crecer:
+
+```bash
+docker compose exec backend alembic downgrade 001c_categories_expand
+```
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+Dos cosas que `--autogenerate` **no** sabe hacer aquí, y que están corregidas a mano en las revisiones:
+
+- **Mover los datos.** Compara esquemas, no datos, así que creó la tabla vacía y la columna llena de
+  `NULL`. El traspaso está escrito a mano, y lee los nombres de los propios productos (`SELECT DISTINCT`)
+  en vez de llevar una lista escrita, para que no se pueda olvidar ninguno.
+- **Deshacer CONTRACT.** Generó un `add_column` con `NOT NULL` y sin valor por defecto, que sobre una tabla
+  con 36 filas PostgreSQL rechaza (*column "category" contains null values*). El `downgrade` correcto tiene
+  tres pasos: añadir la columna anulable, rellenarla desde `categories`, y solo entonces exigir `NOT NULL`.
+
+**La API no cambió.** `GET /products` sigue enviando `"category": "laptops"`, un nombre, que ahora se lee de
+la fila relacionada. El contrato con el navegador es independiente del esquema. Lo que sí es nuevo es
+`GET /categories`, que devuelve `[{"id": 1, "name": "laptops"}, …]`: antes el frontend llevaba la lista
+escrita a mano y ahora la pide. Añade una fila a `categories` y aparecerá un botón más en la pantalla sin
+tocar una línea de código.
+
+```bash
+curl -s "http://localhost:8000/categories"
+```
+
 ## Checkpoints
 
 | Tag | Revisión Alembic | Qué se enseña | Estado |
 |---|---|---|---|
-| `cp1-catalog` | `001_products`, `001a_product_images` y `001b_product_images_jpg` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
+| `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | pendiente |
 | `cp3-users` | `003_users_and_addresses` | Usuario, dirección de envío y de facturación, registro y login | pendiente |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
