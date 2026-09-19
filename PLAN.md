@@ -48,7 +48,7 @@ queda solo para este `PLAN.md` y para el `README.md` de clase.
 2. **Errores de la API siempre `{"detail": "..."}`** con el código HTTP correcto y el dato que falló en el mensaje.
 3. **Todo lo que afecta a dinero o stock se calcula en el servidor.** Del cliente solo llegan ids y cantidades.
 4. **Nombres SQL y JSON en `snake_case`**: tablas en plural, PK `id`, FK `<singular>_id`, fechas `created_at`. Python en `snake_case`, TypeScript en `camelCase`, componentes en `PascalCase`.
-5. **Fuera de alcance** (nota en el README, no se implementa): pasarela de pago, roles, Docker de la app, CI, observabilidad, tests automáticos. Un pedido nace en estado `paid`.
+5. **Fuera de alcance** (nota en el README, no se implementa): pasarela de pago, roles, imágenes de producción (los contenedores de la app arrancan los servidores de desarrollo), CI, observabilidad, tests automáticos. Un pedido nace en estado `paid`.
 
 ---
 
@@ -56,9 +56,10 @@ queda solo para este `PLAN.md` y para el `README.md` de clase.
 
 | Capa | Elección |
 |---|---|
-| Base de datos | PostgreSQL 16 (`postgres:16-alpine`), único servicio de `docker-compose.yml` |
+| Base de datos | PostgreSQL 16 (`postgres:16-alpine`), con los datos en un bind mount visible (`./data/postgres`) |
 | Backend | Python 3.12 · FastAPI · SQLAlchemy 2.0 (estilo `Mapped`) · Alembic · `psycopg[binary]` 3 · uvicorn · `pydantic[email]` · `python-dotenv` |
 | Frontend | Vite · React 18 · TypeScript · `react-router-dom` (desde cp2) · un `styles.css` |
+| Contenedores | Un único `docker-compose.yml` con **todos** los servicios: `db`, `backend` (`python:3.12-slim`) y `frontend` (`node:22-alpine`). Un servicio nuevo en un checkpoint posterior se añade al mismo fichero (§8.9) |
 
 **Fuente de verdad del esquema: los modelos SQLAlchemy.** Alembic genera las migraciones
 comparándolos con la base de datos (`--autogenerate`), y a mano se añade lo que
@@ -72,9 +73,11 @@ un proyecto con SQLAlchemy y es lo que se enseña.
 ```
 shop/
 ├── README.md                 # (castellano) arranque, checkpoints, qué queda fuera
-├── docker-compose.yml        # solo el servicio db; sin scripts de inicialización
+├── docker-compose.yml        # todos los servicios (db, backend, frontend); sin scripts de inicialización
 ├── .env.example
+├── data/postgres/            # datos de PostgreSQL (bind mount); no se sube a Git
 ├── backend/
+│   ├── Dockerfile · .dockerignore
 │   ├── requirements.txt
 │   ├── alembic.ini
 │   ├── alembic/
@@ -94,6 +97,7 @@ shop/
 │       ├── security.py       # cp3: hash_password, verify_password
 │       └── routes/           # V: products.py, cart.py, orders.py, users.py
 └── frontend/
+    ├── Dockerfile · .dockerignore
     ├── package.json · vite.config.ts · tsconfig.json · index.html
     └── src/
         ├── api.ts            # request<T>() y una función por endpoint
@@ -111,10 +115,31 @@ Git: rama `main`, commits en inglés, un tag anotado al cerrar cada checkpoint.
 
 ## 3. Base común (antes del checkpoint 1)
 
-**`docker-compose.yml`** — servicio `db`: `postgres:16-alpine`, `POSTGRES_USER=shop`,
-`POSTGRES_DB=shop`, contraseña desde `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing in .env}`,
-volumen con nombre, healthcheck `pg_isready`, puerto `5432:5432` (comentario: solo desarrollo).
-**Sin** `docker-entrypoint-initdb.d`: el esquema lo gestiona Alembic.
+**`docker-compose.yml`** — **todos los servicios que hay que levantar para que la aplicación
+funcione**, no solo la base de datos. Es una regla del curso (§8.9): cuando un checkpoint necesite
+un servicio nuevo, se añade a este mismo fichero en ese mismo checkpoint, con su healthcheck y su
+`depends_on`. En la base son tres, y arrancan en este orden:
+
+- `db`: `postgres:16-alpine`, `POSTGRES_USER=shop`, `POSTGRES_DB=shop`, contraseña desde
+  `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing in .env}`, healthcheck `pg_isready`, puerto
+  `5432:5432` (comentario: solo desarrollo). Los datos van en un **bind mount**,
+  `./data/postgres:/var/lib/postgresql/data`, y no en un volumen con nombre: así se ve dónde se
+  guardan (un volumen con nombre vive dentro de la máquina virtual de Docker, invisible desde el
+  sistema anfitrión). `data/` va en `.gitignore`. Consecuencia que se explica en el README:
+  `docker compose down -v` **ya no borra la base de datos**; para empezar de cero se borra la
+  carpeta. **Sin** `docker-entrypoint-initdb.d`: el esquema lo gestiona Alembic.
+- `backend`: `build: ./backend` (`python:3.12-slim`). `DATABASE_URL` con el host `db` (el nombre del
+  servicio, no `localhost`), que pisa el de `.env`. Al arrancar ejecuta `alembic upgrade head` y
+  después `uvicorn app.main:app --host 0.0.0.0 --port 8000`. `depends_on` `db` en estado
+  `service_healthy`; healthcheck contra `GET /health`; puerto `8000:8000`.
+- `frontend`: `build: ./frontend` (`node:22-alpine`, `npm ci`). Arranca el servidor de desarrollo de
+  Vite con `--host 0.0.0.0`, en el puerto `5173:5173` (el único origen que permite el CORS).
+  `depends_on` `backend` en estado `service_healthy`; healthcheck contra `/`.
+
+El código va dentro de las imágenes (sin bind mounts de código ni recarga en caliente). Para
+desarrollar con recarga se levanta solo la base de datos con `docker compose up -d db` y el backend
+y el frontend se arrancan a mano; `docker compose up -d` a secas levantaría también esos dos y
+ocuparía los puertos 8000 y 5173.
 
 **`.env.example`**:
 ```
@@ -166,15 +191,21 @@ aplicada. Es el `schema_migrations` de la sesión 15, hecho por la herramienta d
 - `format.ts`: `formatPrice(cents)` → `"€899.00"` con `Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" })`; `formatDate(iso)`.
 - `styles.css`: rejilla de tarjetas, cabecera, tabla.
 
-**README** (castellano) — arranque:
+**README** (castellano) — arranque, en dos opciones. A, todo con Docker:
 ```bash
-docker compose up -d
+cp .env.example .env
+docker compose up --build
+```
+B, desarrollo local (con recarga): solo la base de datos en Docker y el resto a mano:
+```bash
+docker compose up -d db
 cd backend && python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt && alembic upgrade head && uvicorn app.main:app --reload
 cd frontend && npm install && npm run dev
 ```
 
-**Hecho cuando**: `GET /health` responde, `alembic current` no da error (sin revisiones aún),
-Vite muestra la página vacía. Commit `Base: compose, Alembic, FastAPI and Vite skeleton`.
+**Hecho cuando**: `docker compose up --build` desde cero deja los tres servicios en estado
+`healthy`; `GET /health` responde, `alembic current` no da error (sin revisiones aún) y Vite
+muestra la página vacía. Commit `Base: compose, Alembic, FastAPI and Vite skeleton`.
 
 ---
 
@@ -637,12 +668,13 @@ Esquema de entrada: `class PriceIn(BaseModel): price_cents: int = Field(ge=0)`.
 
 1. Sección 3 (base común). Comprobar `/health`, `alembic current` y Vite. Commit.
 2. Para cada checkpoint: modelos → `alembic revision --autogenerate --rev-id ...` → revisar y completar a mano la revisión → `alembic upgrade head` → esquemas de entrada → servicios → rutas → probar con curl → frontend → README → commit → tag.
-3. Antes de cada tag: `docker compose down -v && docker compose up -d && alembic upgrade head` aplica todas las revisiones desde cero sin error, y `alembic downgrade base && alembic upgrade head` también.
+3. Antes de cada tag: `docker compose down`, borrar `data/postgres` (los datos están en un bind mount: `down -v` ya no los borra) y `docker compose up -d --build` deja todos los servicios en estado `healthy` y aplica todas las revisiones desde cero sin error; `alembic downgrade base && alembic upgrade head` (desde `backend/`, con el entorno virtual activado) también.
 4. Antes de cada tag: `alembic revision --autogenerate -m "check"` sobre la base al día **no genera ningún cambio** (los modelos y la base coinciden). Borrar el fichero vacío que genera.
 5. No adelantar nada de un checkpoint posterior.
 6. **Revisión de clases antes de cada tag**: en `backend/app` solo hay clases en `models.py` (una por tabla, más `Base`) y en `schemas.py` (una por cuerpo de petición). `grep -rn "^class " backend/app` no debe listar ningún otro fichero. En `frontend/src`, `grep -rn "class " frontend/src` no debe devolver nada.
 7. **Revisión de idioma antes de cada tag**: `grep -rniE "producto|carrito|pedido|usuario|direccion|precio|sesion" backend/app backend/alembic/versions frontend/src` no debe devolver nada.
-8. El README final (castellano) tiene: arranque, los comandos de Alembic para moverse entre checkpoints, tabla de checkpoints con su tag y su revisión, el guion de demo de la sección 9 y la lista de lo que queda fuera.
+8. El README final (castellano) tiene: arranque (las dos opciones: todo con Docker y desarrollo local), dónde están los datos de la base de datos y cómo empezar de cero, los comandos de Alembic para moverse entre checkpoints, tabla de checkpoints con su tag y su revisión, el guion de demo de la sección 9 y la lista de lo que queda fuera.
+9. **Todos los servicios, en `docker-compose.yml`**: todo lo que haya que levantar para que la aplicación funcione vive en ese fichero, y se va añadiendo checkpoint a checkpoint. Si un checkpoint introduce un servicio nuevo (una cola, una caché, un servidor de correo de pruebas, cualquier otro proceso), se añade en ese mismo checkpoint, con su healthcheck, su `depends_on` y, si guarda datos, su bind mount visible dentro del repositorio (y esa carpeta en `.gitignore`). Nadie debe tener que arrancar nada aparte para que el checkpoint funcione con `docker compose up --build`. Antes de cada tag, esto se comprueba con la regla 3.
 
 ---
 
@@ -679,3 +711,6 @@ el `downgrade` que falla si se olvidan el trigger y la función.
 | Moneda `en-IE` (`€899.00`) | `es-ES` (`899,00 €`) | Un argumento en `formatPrice` |
 | Token de carrito en cabecera + `localStorage` | Cookie `HttpOnly` (sesión 18) | CORS con credenciales y `Set-Cookie` en `POST /cart` |
 | Imágenes de `picsum.photos` | Carpeta estática servida por FastAPI (sin internet) | `image_url` relativa y `StaticFiles` en `main.py` |
+| Datos de PostgreSQL en un bind mount (`./data/postgres`) | Volumen con nombre | `volumes:` con nombre en `docker-compose.yml`; `down -v` vuelve a borrar la base de datos y los datos dejan de verse desde el sistema anfitrión |
+| Contenedores con los servidores de desarrollo (Vite y uvicorn) | Imágenes de producción: `vite build` servido por nginx; el backend sin migrar al arrancar (la migración, un paso de despliegue aparte) | Un `Dockerfile` de varias etapas para el frontend; el `command` del backend; `VITE_API_URL` al construir el frontend |
+| Un solo origen CORS fijo (`http://localhost:5173`) | Lista de orígenes en una variable de entorno `CORS_ORIGINS` | `main.py` la lee del entorno; `.env.example` y `docker-compose.yml` la definen. Necesario para desplegar el frontend en otra dirección |
