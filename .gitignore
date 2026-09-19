@@ -1,9 +1,13 @@
 # Secrets: .env.example is the committed template, .env is yours
 .env
 
-# PostgreSQL data files (bind-mounted by docker-compose.yml). data/images is NOT ignored:
-# it holds the seed product images, which belong to the repository.
+# Everything under data/ is ignored: the PostgreSQL files (bind-mounted by
+# docker-compose.yml) and any scratch folder left there.
 data/*
+# Except the product images: they are seed data, like the products of the first migration,
+# and the committed migrations point at them. Without this line a fresh clone would show
+# broken images, because the files the database names would not be in the repository.
+!data/images/
 
 # Python
 .venv/
