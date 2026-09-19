@@ -94,6 +94,7 @@ en `.env` (plantilla: `.env.example`) o en el entorno de quien lo ejecute:
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL (la usa `docker-compose.yml`) | Compose se niega a arrancar |
 | `DATABASE_URL` | Cadena de conexión a la base de datos | El backend no arranca. Con Docker no hace falta: Compose la fija apuntando al servicio `db` |
 | `CORS_ORIGINS` | Páginas que pueden llamar a la API desde un navegador: orígenes separados por comas, sin ruta (`https://tienda.example.com,http://localhost:5173`) | `http://localhost:5173` |
+| `IMAGES_DIR` | Carpeta con las imágenes de los productos, que la API sirve en `/images` | `data/images` de este repositorio. Con Docker no hace falta: Compose monta esa carpeta en `/app/images` y fija la variable |
 
 **CORS** es una protección del *navegador*: una página servida desde un origen (esquema + dominio +
 puerto) no puede leer las respuestas de otro origen a menos que ese otro servidor lo autorice con la
@@ -106,11 +107,42 @@ enviar la cabecera `Origin` a mano:
 curl -i "http://localhost:8000/products?limit=1" -H "Origin: http://localhost:5173"
 ```
 
+## Imágenes de los productos
+
+Las imágenes son ficheros estáticos que sirve la propia API, no algo que se guarde en la base de datos:
+
+```
+data/images/product-1.svg   ── volumen (bind mount, solo lectura) ──▶   /app/images en el contenedor
+                                                                              │  StaticFiles
+navegador  ──  GET http://localhost:8000/images/product-1.svg  ◀────────────────┘
+```
+
+1. La base de datos guarda **dónde está** la imagen respecto al servidor: `products.image_url =
+   '/images/product-1.svg'`. No guarda un dominio, así que los mismos datos valen en `localhost` y en
+   producción.
+2. La API (`GET /products`) devuelve la dirección **completa**, construida con la dirección por la que
+   llegó la petición: `"image_url": "http://localhost:8000/images/product-1.svg"`. Es lo que hay que pedir.
+3. El navegador hace un `GET` normal a esa dirección y `StaticFiles` (en `main.py`) lee el fichero de la
+   carpeta y lo devuelve, con `ETag` para poder contestar `304` si no ha cambiado. No hay función de ruta ni
+   consulta a la base de datos.
+
+Como el frontend solo usa `product.image_url` como `src` de la etiqueta `<img>`, no sabe nada de todo esto.
+Cargar una imagen de otro origen con `<img>` tampoco necesita CORS.
+
+Los 36 ficheros de `data/images/` son ilustraciones de relleno (color e icono por categoría). Para poner una
+foto real, copia un fichero con el mismo nombre en esa carpeta (o pon otro y cambia `image_url`); se sirve al
+momento, sin reiniciar ni reconstruir nada. La carpeta **sí** se sube a Git (son datos de arranque, como los
+productos de la migración `001_products`); la de la base de datos, `data/postgres/`, no.
+
+La revisión `001a_product_images` es la que cambia los productos de las URLs externas (`picsum.photos`) a
+`/images/product-<id>.svg`. No cambia el esquema, solo los datos, así que está escrita a mano (autogenerate
+compara esquemas, no datos), y su `downgrade` lo deja como estaba.
+
 ## Checkpoints
 
 | Tag | Revisión Alembic | Qué se enseña | Estado |
 |---|---|---|---|
-| `cp1-catalog` | `001_products` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
+| `cp1-catalog` | `001_products` y `001a_product_images` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | pendiente |
 | `cp3-users` | `003_users_and_addresses` | Usuario, dirección de envío y de facturación, registro y login | pendiente |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
@@ -174,6 +206,16 @@ docker compose exec db psql -U shop -d shop
    ```
 
 4. `GET /products/999` devuelve `404` con `{"detail": "Product 999 not found"}`.
+   La imagen: en psql `image_url` es una ruta relativa, en la API es una dirección completa, y esa
+   dirección responde a un `GET` normal:
+
+   ```bash
+   curl -s "http://localhost:8000/products/1"
+   ```
+
+   ```bash
+   curl -i "http://localhost:8000/images/product-1.svg"
+   ```
 5. Navegador con la pestaña **Red** abierta: bajar y ver las **tres** peticiones a `/products`
    (`cursor=0`, `cursor=12`, `cursor=24`) y las imágenes llegando después. Son dos mecanismos distintos:
    `loading="lazy"` retrasa **las imágenes**; el `IntersectionObserver` retrasa **la petición de la
@@ -190,3 +232,4 @@ Se dejan fuera a propósito (no se implementan):
 - CI
 - Observabilidad
 - Tests automáticos
+- Subir imágenes a través de la API (se colocan a mano en `data/images/`)
