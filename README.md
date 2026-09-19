@@ -204,7 +204,7 @@ curl -s "http://localhost:8000/categories"
 |---|---|---|---|
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
-| `cp3-users` | `003_users` y `003a_addresses` | Registro, acceso, sesiones y direcciones de envío y facturación | en curso |
+| `cp3-users` | de `003_users` a `003b_address_history` | Registro, acceso, sesiones, direcciones y el pedido que recuerda a dónde se envió | en curso |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
 Para ver el código de un checkpoint concreto: `git checkout cp1-catalog` (y `git checkout main` para volver).
@@ -386,8 +386,41 @@ de dirección es una **columna** de la propia fila, `is_billing`, no una fila en
 > ha seguido la otra opción a propósito. Lo que cuesta se ve en el botón *"Copy from shipping"*: usar la
 > misma dirección para las dos cosas guarda las mismas líneas dos veces.
 
-> **Los pedidos todavía no se asignan.** Siguen yendo al cliente de prueba de cp2; enlazar el pedido con
-> el usuario y con sus direcciones es el paso siguiente.
+### cp3 · El pedido recuerda a dónde se envió
+
+Las direcciones **dejan de editarse**. Cambiar una retira la fila que estaba en uso y escribe otra, así
+que la fila a la que apunta un pedido nunca cambia por debajo. Es la lección del precio congelado de
+`order_items`, alcanzada por el otro camino: allí copiando el valor, aquí apuntando a una fila que no se
+puede modificar.
+
+12. **La demostración**: con sesión iniciada, el carrito muestra *"Shipping to"* con la dirección de
+    envío. Comprar, y después **mudarse** cambiando la dirección en *My account*. Volver al pedido: sigue
+    diciendo la dirección antigua. La cuenta muestra la nueva.
+13. Mirar la tabla: la fila vieja sigue ahí, retirada, y el pedido apunta a ella.
+
+    ```bash
+    docker compose exec db psql -U shop -d shop -c "SELECT id, is_active, street, city FROM addresses ORDER BY id"
+    ```
+
+    ```bash
+    docker compose exec db psql -U shop -d shop -c "SELECT id, shipping_address_id FROM orders"
+    ```
+
+14. Lo que mantiene el orden es un **índice único parcial**: único sobre `(user_id, is_billing)` pero
+    **solo** `WHERE is_active`. Cada persona tiene como mucho una de cada en uso y todas las retiradas que
+    haga falta. Probar a meter una segunda activa a mano y ver cómo la base de datos la rechaza.
+15. `is_active` **no sale en la API**. Que alguien siga usando una dirección es asunto suyo; el pedido
+    apunta a una fila concreta y eso no le afecta.
+16. La dirección **no se envía desde el navegador**: el servidor la busca a partir del token. Un cliente
+    que pudiera nombrar un `id` de dirección sería un cliente capaz de nombrar la de otra persona.
+17. El `downgrade` de `003b` fue el segundo que autogenerate no pudo escribir bien: el esquema anterior
+    solo admite una dirección por persona y tipo, y para entonces ya hay retiradas. La versión corregida
+    borra las retiradas primero **y dice que eso destruye información**, porque el esquema viejo no tiene
+    dónde guardarla.
+
+> **El comprador todavía es el de prueba.** El pedido ya sabe a dónde va, pero `customer_email` sigue
+> siendo `PLACEHOLDER_CUSTOMER_EMAIL` y no hay `orders.user_id`. Enlazar el pedido con la persona es el
+> paso siguiente.
 
 ## Fuera de alcance
 
