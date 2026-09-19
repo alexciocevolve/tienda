@@ -13,7 +13,11 @@ services:
       POSTGRES_DB: shop
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing in .env}
     volumes:
-      - shop_pgdata:/var/lib/postgresql/data
+      # A bind mount instead of a named volume, so the database files are visible on your
+      # machine: ./data/postgres (ignored by Git). A named volume would live inside
+      # Docker's hidden VM. Because of that, `docker compose down -v` does NOT wipe the
+      # database any more: to start from scratch, delete that folder (see the README).
+      - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
       interval: 5s
@@ -54,6 +58,3 @@ services:
       start_period: 10s
     ports:
       - "5173:5173" # the API only allows this origin (CORS)
-
-volumes:
-  shop_pgdata:

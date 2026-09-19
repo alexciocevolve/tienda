@@ -36,9 +36,30 @@ docker compose up --build
 | Backend | `http://localhost:8000` (documentación interactiva en `/docs`) |
 | PostgreSQL | `localhost:5432` |
 
-Para parar todo conservando los datos: `docker compose down`. Con `docker compose down -v` se borra
-también la base de datos. El código va dentro de las imágenes: tras cambiarlo hay que repetir
-`docker compose up --build`. Para trabajar con recarga en caliente, usa la opción B.
+Para parar todo: `docker compose down`. El código va dentro de las imágenes: tras cambiarlo hay que
+repetir `docker compose up --build`. Para trabajar con recarga en caliente, usa la opción B.
+
+#### Dónde están los datos de la base de datos
+
+Los ficheros de PostgreSQL están en [`data/postgres/`](data), una carpeta de tu propio disco montada en
+el contenedor (*bind mount*). Se puede abrir con el Explorador y no se sube a Git. Un volumen con
+nombre estaría escondido dentro de la máquina virtual de Docker.
+
+Consecuencia importante: **`docker compose down -v` ya no borra la base de datos**, porque `-v` solo
+elimina volúmenes con nombre. Para empezar de cero (por ejemplo, para volver a aplicar todas las
+migraciones desde la primera):
+
+```bash
+docker compose down
+```
+
+```bash
+rm -rf data/postgres
+```
+
+```bash
+docker compose up -d --build
+```
 
 ### Opción B · Desarrollo local
 

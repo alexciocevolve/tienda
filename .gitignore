@@ -1,6 +1,9 @@
 # Secrets: .env.example is the committed template, .env is yours
 .env
 
+# PostgreSQL data files (bind-mounted by docker-compose.yml)
+data/
+
 # Python
 .venv/
 __pycache__/
