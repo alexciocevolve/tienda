@@ -84,6 +84,28 @@ Frontend, en `http://localhost:5173`:
 cd frontend && npm install && npm run dev
 ```
 
+## Configuración
+
+Todo lo que el backend lee del entorno está en [`backend/app/config.py`](backend/app/config.py). Se define
+en `.env` (plantilla: `.env.example`) o en el entorno de quien lo ejecute:
+
+| Variable | Para qué sirve | Si falta |
+|---|---|---|
+| `POSTGRES_PASSWORD` | Contraseña de PostgreSQL (la usa `docker-compose.yml`) | Compose se niega a arrancar |
+| `DATABASE_URL` | Cadena de conexión a la base de datos | El backend no arranca. Con Docker no hace falta: Compose la fija apuntando al servicio `db` |
+| `CORS_ORIGINS` | Páginas que pueden llamar a la API desde un navegador: orígenes separados por comas, sin ruta (`https://tienda.example.com,http://localhost:5173`) | `http://localhost:5173` |
+
+**CORS** es una protección del *navegador*: una página servida desde un origen (esquema + dominio +
+puerto) no puede leer las respuestas de otro origen a menos que ese otro servidor lo autorice con la
+cabecera `Access-Control-Allow-Origin`. `localhost:5173` (frontend) y `localhost:8000` (API) son orígenes
+distintos, así que la API tiene que nombrar al frontend. Para desplegar el frontend en otra dirección basta
+con listarla en `CORS_ORIGINS`; no hay que tocar código. `curl` no aplica CORS: para comprobarlo hay que
+enviar la cabecera `Origin` a mano:
+
+```bash
+curl -i "http://localhost:8000/products?limit=1" -H "Origin: http://localhost:5173"
+```
+
 ## Checkpoints
 
 | Tag | Revisión Alembic | Qué se enseña | Estado |

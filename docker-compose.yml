@@ -33,6 +33,9 @@ services:
       # not by localhost. This overrides the DATABASE_URL of .env, which is for running
       # the backend by hand on your machine.
       DATABASE_URL: postgresql+psycopg://shop:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing in .env}@db:5432/shop
+      # Which pages may call the API. Taken from .env (or the shell); if it is not there,
+      # the Vite dev server of this same compose file.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       db:
         condition: service_healthy # do not start (and migrate) until PostgreSQL accepts connections
