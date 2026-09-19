@@ -38,6 +38,31 @@ main {
   font-size: 1.25rem;
 }
 
+/* Category filter */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.chip {
+  font: inherit;
+  padding: 6px 14px;
+  text-transform: capitalize;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Cards grid */
 .grid {
   display: grid;
@@ -89,6 +114,11 @@ main {
   font-weight: 600;
   color: var(--danger);
   background: #fef3f2;
+}
+
+/* Empty element after the grid: when it scrolls into view, the next page is requested */
+.sentinel {
+  height: 1px;
 }
 
 /* Loading / empty / error messages */

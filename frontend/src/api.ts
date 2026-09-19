@@ -19,3 +19,27 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   }
   return response.json() as Promise<T>;
 }
+
+// The shape of what the API sends. Keys stay snake_case, exactly as on the wire;
+// everything we write in TypeScript (variables, functions) is camelCase.
+export type Product = {
+  id: number;
+  name: string;
+  description: string;
+  category: string;
+  price_cents: number;
+  stock: number;
+  image_url: string;
+};
+
+export type ProductPage = { items: Product[]; next_cursor: number | null };
+
+export function listProducts({ category, cursor }: { category?: string; cursor?: number } = {}) {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (cursor !== undefined) params.set("cursor", String(cursor));
+  const query = params.toString();
+  return request<ProductPage>(`/products${query ? `?${query}` : ""}`);
+}
+
+export const getProduct = (id: number) => request<Product>(`/products/${id}`);
