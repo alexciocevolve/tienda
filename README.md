@@ -78,6 +78,9 @@ cd backend && python -m venv .venv && .venv/Scripts/activate && pip install -r r
 
 > En Linux o macOS el entorno virtual se activa con `source .venv/bin/activate`.
 
+> **Ojo con `/docs`:** es una página que carga Swagger UI desde un CDN, así que sin
+> conexión a internet no pinta nada aunque `/openapi.json` siga contestando perfectamente.
+
 Frontend, en `http://localhost:5173`:
 
 ```bash
@@ -197,6 +200,30 @@ tocar una línea de código.
 ```bash
 curl -s "http://localhost:8000/categories"
 ```
+
+## El contrato de la API (`openapi.json`)
+
+FastAPI **genera** el documento OpenAPI a partir del código: recorre las rutas y lee las firmas, los
+modelos Pydantic y los decoradores. No existe un fichero que se edite para cambiar el contrato — el
+contrato es el código. Lo sirve en `/openapi.json`, y `/docs` y `/redoc` solo lo pintan.
+
+Eso tiene una consecuencia que conviene conocer: **lee declaraciones, nunca el cuerpo de las
+funciones**. Todo lo que se lanza con `raise HTTPException(...)` es invisible para el generador, así que
+hasta que se declararon con `responses=` en cada ruta, las decisiones más pensadas de esta API —404 en
+vez de 403 para el pedido de otro, 404 en vez de lista vacía para un producto que no existe, 409 en vez
+de 400 cuando una regla dice que no— **no aparecían en su propia documentación**.
+
+El contrato está además **versionado en el repositorio**, para que un cambio llegue como un diff que
+alguien tiene que aprobar en vez de cambiar solo:
+
+```bash
+cd backend && .venv/Scripts/python export_openapi.py
+```
+
+| Rompe esto | Tiene que fallar |
+|---|---|
+| Cambiar cualquier cosa que un cliente vea (una ruta, un parámetro, un código de estado) sin reexportar | `test_the_committed_contract_still_matches_the_code`, con el diff exacto |
+| Quitar el `responses=` de `POST /orders` o de `GET /orders/{id}` | también `test_the_failures_this_api_chose_are_in_its_documentation`, que dice **qué promesa** se ha perdido |
 
 ## Tests
 

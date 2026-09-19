@@ -120,7 +120,7 @@ tienda/
 │   ├── Dockerfile · .dockerignore · requirements.txt · alembic.ini
 │   ├── alembic/
 │   │   ├── env.py            # lee DATABASE_URL del entorno; target_metadata = Base.metadata
-│   │   └── versions/         # 001… 001d (cp1), 002 (cp2), 003… 003c (cp3), 004 (cp5)
+│   │   └── versions/         # 001… 001d (cp1), 002 (cp2), 003… 003c (cp3), 004 y 004a (cp5)
 │   ├── app/
 │   │   ├── main.py           # FastAPI, CORS, include_router, GET /health, StaticFiles
 │   │   ├── config.py         # TODO lo que se lee del entorno, en un solo sitio
@@ -131,6 +131,8 @@ tienda/
 │   │   ├── security.py       # hash_password, verify_password
 │   │   └── routes/           # V: products, categories, cart, orders, users, shared
 │   ├── tests/                # cp4: servicios y API, en proceso
+│   ├── export_openapi.py     # vuelca el contrato a openapi.json
+│   ├── openapi.json          # el contrato, versionado; un test falla si deja de cuadrar
 │   └── requirements-dev.txt · pytest.ini
 ├── e2e/                      # cp4: la tienda levantada, solo HTTP y SQL. NO importa app
 └── frontend/
