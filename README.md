@@ -219,13 +219,26 @@ mismos 36 productos y sin usuarios. No hay que borrar nada a mano.
 | Poner `price_cents=0` en el `OrderItem` | Los dos tests del precio congelado |
 | Quitar `Order.user_id == user.id` del `WHERE` | El test de que un pedido solo lo lee su dueño |
 | Hacer que `save_address` modifique la fila | Los tests del histórico de direcciones |
+| Quitar `with_for_update()` de `create_order` | El test de concurrencia: *«both buyers got through»* |
+| Devolver `403` en vez de `404` en un pedido ajeno | El test que comprueba que no se confirma su existencia |
+| Añadir `password_hash` a la respuesta de un usuario | Los dos tests que revisan lo que sale por la API |
+| Cambiar un modelo sin escribir la migración | El test de deriva, que es el único que dice **por qué** |
 
 Un test que no falla al romper lo que vigila no vigila nada.
 
-> **Lo que todavía no está cubierto:** quitar `with_for_update()` de `create_order` **no** hace fallar
-> ningún test. Esa regla (dos compradores a por la última unidad) necesita dos transacciones reales
-> confirmadas, y eso no cabe en el truco de la transacción que se deshace. Está pendiente, junto con los
-> tests de las rutas HTTP, los de migraciones y los del frontend.
+### Los tres tipos de test, y por qué son distintos
+
+| Fichero | Cómo se aísla |
+|---|---|
+| `test_security.py` | No toca la base de datos: una función, un argumento, una respuesta |
+| `test_*.py` (servicios) y `test_api_*.py` | Una transacción que se deshace al terminar |
+| `test_concurrency.py` | **Confirma de verdad**, porque dos transacciones que no se ven no compiten por nada. Crea su propio producto en vez de tocar el stock de los 36 de siempre, y limpia con SQL a pelo para que un fallo no deje filas confirmadas detrás |
+| `test_migrations.py` | **Su propia base de datos**, que crea y destruye, porque la vacía entera |
+
+Los de la API van contra el `TestClient` de FastAPI, no contra un servidor levantado: prueban las rutas,
+las dependencias, la validación y los códigos de estado, sin que nadie tenga que arrancar nada.
+
+> **Lo que todavía no está cubierto:** los tests del frontend (`vitest`), que son el último trozo del cp4.
 
 ## Checkpoints
 
