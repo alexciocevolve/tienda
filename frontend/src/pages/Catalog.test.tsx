@@ -10,12 +10,13 @@ import Catalog from "./Catalog";
 vi.mock("../api", () => ({
   listCategories: vi.fn(),
   listProducts: vi.fn(),
+  getPriceHistory: vi.fn(),
 }));
 vi.mock("../cart", () => ({
   useCart: () => ({ cart: null, setQuantity: vi.fn() }),
 }));
 
-const { listCategories, listProducts } = await import("../api");
+const { listCategories, listProducts, getPriceHistory } = await import("../api");
 
 const CATEGORIES: Category[] = [
   { id: 1, name: "laptops" },
@@ -131,6 +132,25 @@ describe("Catalog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Product 1")).toBeInTheDocument();
+  });
+
+  it("asks for no price history at all until somebody opens a product", async () => {
+    vi.mocked(listProducts).mockResolvedValue(page([1, 2, 3], null));
+    vi.mocked(getPriceHistory).mockResolvedValue([]);
+
+    render(<Catalog />);
+    await screen.findByText("Product 3");
+
+    // Three cards on screen and not one request. This is the whole reason the history is
+    // not part of GET /products: on a full page it would be twelve requests to draw
+    // something nobody is looking at. The N+1 that never happens because nobody asked.
+    expect(getPriceHistory).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Product 2" }));
+
+    // And now exactly one, for the one product that was opened.
+    await waitFor(() => expect(getPriceHistory).toHaveBeenCalledTimes(1));
+    expect(getPriceHistory).toHaveBeenCalledWith(2);
   });
 
   it("draws the buttons the database sent, not a list written in the page", async () => {
