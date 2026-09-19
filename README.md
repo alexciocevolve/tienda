@@ -198,6 +198,35 @@ tocar una línea de código.
 curl -s "http://localhost:8000/categories"
 ```
 
+## Tests
+
+Los tests del backend se ejecutan contra una base de datos **aparte**, `shop_test`, que se crea sola la
+primera vez y se construye **ejecutando las migraciones de verdad**. Nunca tocan la base de desarrollo,
+así que no pueden llevarse por delante los datos de la clase.
+
+```bash
+cd backend && .venv/Scripts/activate && pip install -r requirements-dev.txt && pytest
+```
+
+Cada test corre dentro de una transacción que se deshace al terminar, así que todos empiezan con los
+mismos 36 productos y sin usuarios. No hay que borrar nada a mano.
+
+**Cómo saber si un test sirve para algo:** rompe a propósito la regla que vigila y comprueba que falla.
+
+| Rompe esto en `services.py` | Debe fallar |
+|---|---|
+| Quitar `joinedload(Product.category)` | El test que cuenta consultas (el N+1) |
+| Poner `price_cents=0` en el `OrderItem` | Los dos tests del precio congelado |
+| Quitar `Order.user_id == user.id` del `WHERE` | El test de que un pedido solo lo lee su dueño |
+| Hacer que `save_address` modifique la fila | Los tests del histórico de direcciones |
+
+Un test que no falla al romper lo que vigila no vigila nada.
+
+> **Lo que todavía no está cubierto:** quitar `with_for_update()` de `create_order` **no** hace fallar
+> ningún test. Esa regla (dos compradores a por la última unidad) necesita dos transacciones reales
+> confirmadas, y eso no cabe en el truco de la transacción que se deshace. Está pendiente, junto con los
+> tests de las rutas HTTP, los de migraciones y los del frontend.
+
 ## Checkpoints
 
 | Tag | Revisión Alembic | Qué se enseña | Estado |
