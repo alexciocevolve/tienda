@@ -3,7 +3,7 @@
 
 # PostgreSQL data files (bind-mounted by docker-compose.yml). data/images is NOT ignored:
 # it holds the seed product images, which belong to the repository.
-data/postgres/
+data/*
 
 # Python
 .venv/
