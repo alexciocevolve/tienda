@@ -203,7 +203,7 @@ curl -s "http://localhost:8000/categories"
 | Tag | Revisión Alembic | Qué se enseña | Estado |
 |---|---|---|---|
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
-| `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | pendiente |
+| `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
 | `cp3-users` | `003_users_and_addresses` | Usuario, dirección de envío y de facturación, registro y login | pendiente |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
@@ -285,6 +285,46 @@ docker compose exec db psql -U shop -d shop
    `loading="lazy"` retrasa **las imágenes**; el `IntersectionObserver` retrasa **la petición de la
    página siguiente**. Si la ventana es muy alta, el final de la lista ya está a la vista y se cargan las
    tres páginas de golpe: reduce la altura de la ventana o amplía el zoom del navegador.
+
+### cp2 · Carrito y pedido
+
+1. Abrir `cart_items` y `order_items` lado a lado en [`models.py`](backend/app/models.py). **Esa es la
+   sesión**: `cart_items` **no** tiene columna de precio y `order_items` **sí**. Un carrito enseña el precio
+   de hoy, leído de `products`; un pedido guarda el precio al que se compró.
+2. El recorrido completo por curl. El token del carrito viaja en una cabecera, nunca en la dirección:
+
+   ```bash
+   curl -s -X POST http://localhost:8000/cart
+   ```
+
+   ```bash
+   curl -s -X PUT http://localhost:8000/cart/items/1 -H "X-Cart-Token: TOKEN" -H "Content-Type: application/json" -d '{"quantity":2}'
+   ```
+
+   Repetir ese mismo `PUT` deja el carrito igual: **fija** la cantidad, no suma. Por eso reintentarlo tras
+   un corte de red es inofensivo. `DELETE` quita la línea: cada verbo hace lo que dice su nombre.
+3. La demostración del precio congelado. Hacer el pedido, cambiar el precio en psql y volver a leerlo:
+
+   ```bash
+   docker compose exec db psql -U shop -d shop -c "UPDATE products SET price_cents = 1 WHERE id = 1"
+   ```
+
+   ```bash
+   curl -s http://localhost:8000/orders/1
+   ```
+
+   El pedido sigue diciendo 89900. El catálogo ya dice 1.
+4. Pedir más unidades de las que hay: `409` con el detalle, y el stock **intacto**. Con dos líneas, una
+   servible y otra no, no se mueve ninguna: el pedido es todo o nada.
+5. La carrera de la sesión 14: dos carritos con la última unidad, pagando a la vez. Uno recibe `201` y el
+   otro `409`, y el stock acaba en 0, nunca en −1. Lo consigue `SELECT ... FOR UPDATE` en `create_order`.
+6. En el navegador: añadir desde el catálogo, `+` / `−` / `Remove` en el carrito, comprar y ver la
+   confirmación. El carrito sobrevive a recargar la página, porque el token está en `localStorage`.
+
+> **Todavía no hay usuarios.** Cada pedido se asigna al mismo cliente de prueba, definido en
+> [`backend/app/config.py`](backend/app/config.py) como `PLACEHOLDER_CUSTOMER_EMAIL`. Por eso `POST /orders`
+> no lleva cuerpo: los precios, el total y el comprador los decide el servidor. El registro, la
+> autenticación y la asignación real del pedido llegan en el checkpoint siguiente.
 
 ## Fuera de alcance
 

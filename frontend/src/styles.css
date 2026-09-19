@@ -277,3 +277,114 @@ th {
   letter-spacing: 0.04em;
   color: var(--muted);
 }
+
+/* Header links */
+.site-header h1 a,
+.site-header > a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-header > a {
+  font-weight: 600;
+}
+
+.site-header > a:hover,
+.site-header h1 a:hover {
+  color: var(--accent);
+}
+
+/* Buttons that do something, as opposed to the chips that filter */
+.primary,
+.add {
+  font: inherit;
+  padding: 8px 14px;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primary:disabled,
+.add:disabled {
+  color: var(--muted);
+  background: var(--border);
+  cursor: not-allowed;
+}
+
+/* The card is covered by a stretched button that opens the detail; this one has to sit
+   on top of it, or the click would open the detail instead of adding to the cart. */
+.add {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  font-size: 0.85rem;
+}
+
+.primary {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* Cart table */
+.cart-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cart-product img {
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.quantity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quantity button {
+  width: 28px;
+  height: 28px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quantity button:disabled {
+  color: var(--border);
+  cursor: not-allowed;
+}
+
+.link-button {
+  font: inherit;
+  padding: 0;
+  color: var(--danger);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+tfoot th,
+tfoot td {
+  font-weight: 600;
+  border-bottom: 0;
+}
+
+.checkout {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.checkout .status {
+  padding: 0;
+}
