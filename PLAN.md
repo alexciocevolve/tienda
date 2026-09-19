@@ -756,9 +756,9 @@ porque Alembic **no ve funciones ni triggers**.
 ### 8.2 Modelo
 
 ```python
-class PriceHistory(Base):
-    __tablename__ = "price_history"
-    __table_args__ = (Index("ix_price_history_product", "product_id", "changed_at"),)
+class ProductPriceHistory(Base):
+    __tablename__ = "product_price_history"
+    __table_args__ = (Index("ix_product_price_history_product", "product_id", "changed_at"),)
     id: Mapped[int] = mapped_column(Identity(), primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE", name=...))
     previous_price_cents: Mapped[int]
@@ -778,7 +778,7 @@ op.execute("""
 -- La función: QUÉ hacer. OLD y NEW son la fila antes y después del UPDATE.
 CREATE FUNCTION record_price_change() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    INSERT INTO price_history (product_id, previous_price_cents, price_cents)
+    INSERT INTO product_price_history (product_id, previous_price_cents, price_cents)
     VALUES (NEW.id, OLD.price_cents, NEW.price_cents);
     RETURN NEW;
 END;
@@ -812,12 +812,12 @@ una tabla que ya no existe. Y el test de §7.6 lo caza solo.
 ### 8.4 Servicios, rutas y frontend
 
 ```python
-def list_price_history(db, product_id) -> list[PriceHistory] | None   # None si el producto no existe
+def list_price_history(db, product_id) -> list[ProductPriceHistory] | None   # None si el producto no existe
 def change_price(db, product_id, price_cents) -> Product | None
 ```
 
 `change_price` asigna `product.price_cents` y hace `commit`. **No escribe en
-`price_history`**: ese es el punto. Un producto inexistente devuelve `None` (404), no lista
+`product_price_history`**: ese es el punto. Un producto inexistente devuelve `None` (404), no lista
 vacía: dos situaciones distintas, dos respuestas distintas.
 
 | Ruta | Cuerpo | Respuesta |
@@ -886,7 +886,7 @@ clase, que es la parte que se recuerda: quitar el `joinedload` y ver fallar el t
 consultas; quitar el `with_for_update` y ver fallar el de concurrencia; cambiar un 404 por un
 403 y ver fallar el de propiedad. Un test que no falla al romper lo que vigila no vigila nada.
 
-**cp5** — psql y `price_history` en otra ventana. `UPDATE` del precio: fila nueva. Mismo
+**cp5** — psql y `product_price_history` en otra ventana. `UPDATE` del precio: fila nueva. Mismo
 precio: nada. `UPDATE` del stock: nada. Preguntar: ¿dónde está el código de Python que ha
 escrito esa fila? No hay. Abrir la revisión `004`: la parte que Alembic no pudo generar.
 
