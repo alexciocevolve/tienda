@@ -276,7 +276,11 @@ docker compose exec db psql -U shop -d shop
    ```bash
    curl -i "http://localhost:8000/images/product-1.jpg"
    ```
-5. Navegador con la pestaña **Red** abierta: bajar y ver las **tres** peticiones a `/products`
+5. Pinchar en cualquier parte de una tarjeta: se abre el detalle con la imagen, la descripción, el
+   precio y si queda stock. Se cierra pinchando fuera, con `Esc` o con la `×`. En la pestaña **Red**
+   se ve lo interesante: **no hay ninguna petición nueva**. La descripción ya venía en el listado, así
+   que el detalle no le pide nada al servidor.
+6. Navegador con la pestaña **Red** abierta: bajar y ver las **tres** peticiones a `/products`
    (`cursor=0`, `cursor=12`, `cursor=24`) y las imágenes llegando después. Son dos mecanismos distintos:
    `loading="lazy"` retrasa **las imágenes**; el `IntersectionObserver` retrasa **la petición de la
    página siguiente**. Si la ventana es muy alta, el final de la lista ya está a la vista y se cargan las

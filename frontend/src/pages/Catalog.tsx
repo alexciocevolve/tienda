@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listCategories, listProducts, type ApiError, type Product } from "../api";
 import { useData } from "../useData";
 import ProductCard from "../components/ProductCard";
+import ProductModal from "../components/ProductModal";
 
 // Two loads on one screen, and each one needs a different tool.
 //
@@ -20,6 +21,9 @@ export default function Catalog() {
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The product whose detail is open, or null for none. The list already carries the
+  // description, so opening the detail asks the server for nothing: it is data we have.
+  const [selected, setSelected] = useState<Product | null>(null);
 
   const sentinel = useRef<HTMLDivElement>(null);
   // Bumped on every category change, so an answer that arrives late for the previous
@@ -101,9 +105,15 @@ export default function Catalog() {
 
       <div className="grid">
         {items.map((product) => (
-          <ProductCard key={product.id} product={product} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            onOpen={() => setSelected(product)}
+          />
         ))}
       </div>
+
+      {selected && <ProductModal product={selected} onClose={() => setSelected(null)} />}
 
       <div ref={sentinel} className="sentinel" />
 
