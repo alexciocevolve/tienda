@@ -204,7 +204,7 @@ curl -s "http://localhost:8000/categories"
 |---|---|---|---|
 | `cp1-catalog` | de `001_products` a `001d_categories_contract` | Una tabla bien hecha, un endpoint paginado, un listado que carga más al hacer scroll | hecho |
 | `cp2-cart` | `002_cart_and_orders` | Carrito (mutable, efímero) frente a pedido (inmutable, precio congelado) | hecho |
-| `cp3-users` | de `003_users` a `003b_address_history` | Registro, acceso, sesiones, direcciones y el pedido que recuerda a dónde se envió | en curso |
+| `cp3-users` | de `003_users` a `003c_orders_user` | Registro, acceso, sesiones, direcciones, y el pedido con dueño y destino | en curso |
 | `cp4-price-history` | `004_price_history` | Un histórico que la base de datos rellena sola con un trigger en el `UPDATE` | pendiente |
 
 Para ver el código de un checkpoint concreto: `git checkout cp1-catalog` (y `git checkout main` para volver).
@@ -418,9 +418,43 @@ puede modificar.
     borra las retiradas primero **y dice que eso destruye información**, porque el esquema viejo no tiene
     dónde guardarla.
 
-> **El comprador todavía es el de prueba.** El pedido ya sabe a dónde va, pero `customer_email` sigue
-> siendo `PLACEHOLDER_CUSTOMER_EMAIL` y no hay `orders.user_id`. Enlazar el pedido con la persona es el
-> paso siguiente.
+### cp3 · No hay pedidos anónimos
+
+Un pedido pertenece a alguien y solo esa persona puede verlo. Los pedidos aparecen en *My account*.
+
+18. **Dos agujeros que se encontraron probando la API, no leyendo el código.** Antes de este paso,
+    `POST /orders` sin token respondía `201`, y peor: `GET /orders/5` **sin token** respondía `200` con el
+    correo y la calle del cliente. Cualquiera podía leer todos los pedidos de la tienda contando ids.
+    Ahora:
+
+    ```bash
+    curl -i -X POST http://localhost:8000/orders -H "X-Cart-Token: TOKEN"
+    ```
+
+    Responde `401`. Y el pedido de otra persona responde **`404`, no `403`**: un `403` confirmaría que el
+    pedido 42 existe, y eso basta para contar los pedidos del negocio.
+19. Un pedido sin dirección también se rechaza, con `409`: tiene que saber a dónde va. En la pantalla el
+    botón está deshabilitado antes de llegar ahí, pero la comprobación que manda es la del servidor.
+20. **Lo interesante de la revisión `003c` es lo que NO hace.** No pone `user_id` como `NOT NULL`, porque
+    los pedidos anteriores a esta regla no tienen dueño y las únicas salidas serían inventarle uno o
+    borrar pedidos de verdad. En su lugar añade la regla como `CHECK ... NOT VALID`:
+
+    ```sql
+    ALTER TABLE orders ADD CONSTRAINT ck_orders_user_id_required CHECK (user_id IS NOT NULL) NOT VALID;
+    ```
+
+    PostgreSQL la aplica a **todo lo que se escriba a partir de ahora** y no revisa las filas que ya
+    estaban. Es la misma técnica con la que se añade una restricción a una tabla enorme sin bloquearla
+    durante un recorrido completo; después, cuando las filas viejas están resueltas, se valida con una
+    línea: `VALIDATE CONSTRAINT`. Se puede ver funcionando:
+
+    ```bash
+    docker compose exec db psql -U shop -d shop -c "INSERT INTO orders (customer_email, total_cents) VALUES ('x@x.com', 100)"
+    ```
+
+21. `customer_email` se mantiene aunque ya se sepa quién compra: guarda el correo **del día del pedido**,
+    congelado como el precio y la dirección. Cambiar el correo de la cuenta el año que viene no debe
+    reescribir a dónde se confirmó un pedido antiguo.
 
 ## Fuera de alcance
 

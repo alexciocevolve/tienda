@@ -692,3 +692,8 @@ tfoot td {
 .account-note {
   margin-top: 16px;
 }
+
+.orders-heading {
+  margin: 32px 0 12px;
+  font-size: 1rem;
+}
