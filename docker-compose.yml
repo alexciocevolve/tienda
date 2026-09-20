@@ -27,7 +27,11 @@ services:
       - "5432:5432" # development only: never publish a database port in production
 
   backend:
-    build: ./backend
+    # The context is the repository root and not ./backend, because the image has to be
+    # able to copy data/images into itself. See the note at the top of backend/Dockerfile.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       # Inside the Compose network the database is reached by its service name (db),
       # not by localhost. This overrides the DATABASE_URL of .env, which is for running

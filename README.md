@@ -227,6 +227,36 @@ Dos cosas que el pipeline sí comprueba y una sesión de desarrollo normal no:
 - **La versión de Python.** CI usa **3.12**, la del `Dockerfile`, no la del portátil. Es la
   comprobación de que el proyecto no ha empezado a depender de una versión que producción no tiene.
 
+## Desplegar en Render
+
+`render.yaml` describe la tienda entera como **tres recursos que no son tres cosas iguales** — y esa es
+la primera lección de sacar de un portátil algo que allí eran tres contenedores:
+
+| Recurso | Qué es | Plan gratis |
+|---|---|---|
+| `tienda-db` | Una base de datos gestionada | 1 GB · **caduca a los 30 días** |
+| `tienda-api` | Un proceso que escucha en un puerto | Se duerme a los 15 min sin tráfico |
+| `tienda-web` | **Una carpeta de ficheros.** Tras `vite build` no hay proceso | — |
+
+Se despliega con **New → Blueprint** en Render, apuntando a este repositorio. Pide dos valores que no
+se pueden deducir solos (`CORS_ORIGINS` y `VITE_API_URL`), porque cada servicio necesita la URL del
+otro y esas URLs no existen hasta que se crean los servicios.
+
+**Ojo con `VITE_API_URL`:** Vite la **incrusta en el JavaScript al construir**. Cambiarla en el panel
+no hace nada hasta que el sitio se **vuelve a construir**. Configuración de construcción y
+configuración de arranque se parecen mucho en un panel y no se comportan igual.
+
+Y cuatro cosas del código existen por esto:
+
+- **Las imágenes viajan dentro de la imagen de Docker** (`COPY data/images`), por lo que el backend se
+  construye con la raíz del repositorio como contexto. Sin ellas la API **ni arranca**: `StaticFiles`
+  rechaza un directorio que no existe. En el plan gratuito no hay discos persistentes.
+- **El puerto** sale de `${PORT:-8000}`: lo elige el host.
+- **`DATABASE_URL`** llega como `postgresql://…` y `app/config.py` le pone el driver (`with_driver`).
+- **La migración sigue en el arranque.** Render solo ofrece `preDeployCommand` en planes de pago, y en
+  gratis hay exactamente una instancia, así que la comodidad que `PLAN.md` señalaba es aquí la única
+  opción. El fichero deja anotado qué descomentar el día que deje de serlo.
+
 ## El contrato de la API (`openapi.json`)
 
 FastAPI **genera** el documento OpenAPI a partir del código: recorre las rutas y lee las firmas, los
