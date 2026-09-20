@@ -1083,3 +1083,46 @@ que no se puede editar la cesta: o se paga el pedido o se abandona.
 Las tres encajan entre sí: el pedido es el documento, el pedido es lo que caduca, y el webhook
 es lo único que lo da por pagado. Abandonar el pedido es justo lo que suelta la reserva de la
 decisión 2.
+
+### 12.2 Fase 1 · Cómo se cobra: Stripe Checkout alojado
+
+**Decidido: Checkout alojado.** El servidor crea una Checkout Session, el navegador se va a la
+página de Stripe, paga allí y vuelve a `success_url`. Descartadas las otras dos:
+
+| Opción | Por qué no |
+|---|---|
+| Confirmar en el servidor (`confirm=True`) | No puede hacer 3D Secure: hay que prohibirlo con `allow_redirects: "never"`. En Europa con SCA eso deja fuera el caso normal, y el 3DS pasaría de demostrarse a afirmarse |
+| Payment Element embebido | Más código y más control del que hace falta. Se queda como alternativa escrita, no como camino |
+
+Lo que se gana: 3DS, SCA, monederos y traducciones sin escribir una línea, y las dos pantallas
+de vuelta de serie. Lo que se paga: **el formulario de pago y sus errores son de Stripe**, y el
+frontend no lleva Stripe.js — así que la lección de la clave publicable `VITE_` no aplica aquí.
+
+**Los dos vocabularios no se mezclan.** Stripe tiene estados sobre el pago
+(`requires_payment_method`, `requires_action`, `processing`, `succeeded`, `canceled`) y nosotros
+los tenemos sobre el pedido (`pending_payment`, `paid`, `failed`). La fase **traduce**; no adopta
+los ajenos. Un pedido nuestro no puede estar en `requires_capture` — eso es la captura separada,
+que es otra cosa y, si acaso, material de la fase 7 porque Stripe la documenta justo para
+"verificar la disponibilidad de existencias antes de completar un pedido".
+
+**`POST /orders` sigue sin cuerpo**, contra lo que yo había escrito antes de mirarlo: como el
+método de pago lo recoge Stripe en su página, el navegador no manda nada. La decisión del
+objetivo 12 aguanta entera.
+
+**Tres cosas que no pasan solas**, y de ahí sale la mitad de la fase 2:
+
+- **Cancelar no deja el pago en `canceled`.** Eso solo ocurre si lo cancelamos por API o si se
+  confirma demasiadas veces. El pago se queda en `requires_payment_method` indefinidamente.
+- **Abandonar el 3DS deja `requires_action` para siempre.** Pedido huérfano, y stock retenido en
+  cuanto la fase 7 lo reserve.
+- **La Checkout Session sí caduca a las 24 horas** — pero eso es la sesión, no el pago ni el
+  pedido.
+
+**El caso que no se ve y que paga el webhook:** el cliente paga bien y **no vuelve** (cierra la
+pestaña, pierde la red). Stripe cobró, la página de éxito no se abrió, el pedido sigue pendiente
+y nadie se entera. Stripe lo advierte por escrito — "Activar la gestión logística solo desde tu
+página de éxito de Checkout no es fiable" — y aun así se construye así a propósito, para leer esa
+frase **después** de haberlo roto.
+
+El desglose de las 18 tarjetas de prueba, con el estado que deja cada una en Stripe y en el
+pedido, está en la parte V del guion en Notion. No se duplica aquí porque caduca.
