@@ -252,6 +252,11 @@ no llega a la base de datos. Y no se arregla después — la región de un recur
 hay que borrarlo y crear otro. Por eso `region:` está escrito en los dos sitios del `render.yaml`:
 omitirlo en la base de datos la manda a Oregon por defecto.
 
+Y si hay que corregirlo, se recrea **el recurso que no guarda nada**: un servicio web se vuelve a construir
+desde el repositorio y no pierde nada; una base de datos, sí. Cambiar la región en el fichero no basta
+— *"changes to a Blueprint never cause a resource to be deleted"* —: hay que **borrar el recurso** y
+volver a sincronizar el Blueprint, que es cuando Render lo crea de nuevo con la región nueva.
+
 Y cuatro cosas del código existen por esto:
 
 - **Las imágenes viajan dentro de la imagen de Docker** (`COPY data/images`), por lo que el backend se
