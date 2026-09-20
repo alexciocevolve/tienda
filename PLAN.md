@@ -942,6 +942,28 @@ modal de detalle, debajo de la descripción.
 9. **Revisión de idioma antes de cada tag**: `grep -rniE "producto|carrito|pedido|usuario|direccion|precio|sesion" backend/app backend/alembic/versions frontend/src` no debe devolver nada.
 10. **Todos los servicios, en `docker-compose.yml`**: si un checkpoint introduce un servicio nuevo, se añade en ese mismo checkpoint con su healthcheck, su `depends_on` y, si guarda datos, su bind mount visible (y esa carpeta en `.gitignore`). Nadie debe tener que arrancar nada aparte.
 11. **Probar la API, no solo la pantalla.** Los dos agujeros de seguridad del proyecto (crear pedidos sin sesión y leer el pedido de cualquiera) se encontraron llamando a la API con `curl`, no leyendo el código ni mirando el navegador.
+12. **Lo que se comprueba a mano acaba sin comprobarse.** Desde cp5 hay un pipeline en
+    `.github/workflows/ci.yml` que ejecuta en cada push las tres suites **y las reglas 8 y 9
+    de esta lista**, que hasta entonces eran dos `grep` que había que acordarse de teclear.
+    No estaba en el plan; entra porque el proyecto ya tenía qué automatizar.
+
+### 9.1 El pipeline
+
+Cuatro trabajos, y su forma **es la pirámide de §7 gastada como dinero**: las capas baratas
+van primero y a la vez, y la cara —que construye tres contenedores y espera a que se
+declaren sanos— solo arranca si las otras estaban verdes. Un test unitario en rojo no debe
+costar tres minutos de Docker para enterarse.
+
+| Trabajo | Qué hace | Por qué ahí |
+|---|---|---|
+| `rules` | Los dos `grep` de §9.8 y §9.9 | Segundos. Y son reglas que ya existían sin vigilante |
+| `frontend` | `npm ci`, `npm test`, `npm run build` | El `build` es `tsc --noEmit`: **vitest transpila sin comprobar tipos**, así que un error de tipos vive tan tranquilo en una suite verde |
+| `backend` | PostgreSQL 16 de servicio, `pytest` | Un Postgres **de verdad**: la suite corre las migraciones, crea bases propias y prueba un índice único parcial, un `FOR UPDATE` y un trigger plpgsql. Nada de eso existe en otro motor |
+| `e2e` | `docker compose up --build --wait`, `pytest` | `needs: [rules, frontend, backend]`. Y `--wait` espera a los healthchecks, que es lo que lo hace honesto: los tests empiezan cuando la tienda está montada, no cuando hay tres contenedores |
+
+Detalle que merece decirse en clase: **CI usa Python 3.12**, la del `Dockerfile`, y no la que
+hay en la máquina de desarrollo. Eso convierte al pipeline en la comprobación de que el
+proyecto no ha empezado a depender de una versión que producción no tiene.
 
 ---
 

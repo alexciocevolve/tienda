@@ -201,6 +201,32 @@ tocar una línea de código.
 curl -s "http://localhost:8000/categories"
 ```
 
+## Integración continua
+
+`.github/workflows/ci.yml` ejecuta en cada push y en cada pull request **todo lo que antes se
+comprobaba a mano**: las tres suites de tests y las dos reglas de estilo del proyecto (ni clases
+en `frontend/src`, ni castellano en el código), que hasta ahora eran dos `grep` que había que
+acordarse de teclear antes de cada tag.
+
+Cuatro trabajos, y el orden no es casual — es la pirámide de tests gastada como dinero:
+
+```
+rules  ─┐
+frontend ├──→ e2e
+backend ─┘
+```
+
+Lo barato va primero y a la vez; **e2e solo arranca si lo demás estaba verde**, porque construye
+tres contenedores y espera a sus healthchecks. Un test unitario en rojo no debería costar tres
+minutos de Docker.
+
+Dos cosas que el pipeline sí comprueba y una sesión de desarrollo normal no:
+
+- **El tipado.** `npm run build` es `tsc --noEmit && vite build`. Vitest transpila **sin comprobar
+  tipos**, así que un error de tipos puede vivir tranquilamente dentro de una suite en verde.
+- **La versión de Python.** CI usa **3.12**, la del `Dockerfile`, no la del portátil. Es la
+  comprobación de que el proyecto no ha empezado a depender de una versión que producción no tiene.
+
 ## El contrato de la API (`openapi.json`)
 
 FastAPI **genera** el documento OpenAPI a partir del código: recorre las rutas y lee las firmas, los
