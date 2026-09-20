@@ -246,6 +246,12 @@ otro y esas URLs no existen hasta que se crean los servicios.
 no hace nada hasta que el sitio se **vuelve a construir**. Configuración de construcción y
 configuración de arranque se parecen mucho en un panel y no se comportan igual.
 
+**La base de datos y la API tienen que estar en la MISMA REGIóN.** `fromDatabase` entrega la cadena de
+conexión **interna**, y cada región de Render tiene su propia red privada: si no coinciden, el backend
+no llega a la base de datos. Y no se arregla después — la región de un recurso **no se puede cambiar**,
+hay que borrarlo y crear otro. Por eso `region:` está escrito en los dos sitios del `render.yaml`:
+omitirlo en la base de datos la manda a Oregon por defecto.
+
 Y cuatro cosas del código existen por esto:
 
 - **Las imágenes viajan dentro de la imagen de Docker** (`COPY data/images`), por lo que el backend se

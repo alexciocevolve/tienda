@@ -26,6 +26,17 @@
 databases:
   - name: tienda-db
     plan: free
+    # SAME REGION AS THE API, and this line is not optional however much it looks it.
+    #
+    # Omitting it once already cost a broken deploy: Render defaults to Oregon, the API was
+    # in Frankfurt, and the two could not see each other at all. fromDatabase hands over the
+    # INTERNAL connection string, which only works inside one region - each region has its
+    # own private network - so the shop came up and could not reach its database.
+    #
+    # It is not a setting you fix afterwards either: "Render doesn't currently support
+    # changing the region for an existing service or database." Getting it wrong means
+    # deleting the database and making another one.
+    region: frankfurt
     # The same major version as docker-compose.yml. A database that is one version ahead in
     # production is a difference nobody sees until the day it explains something.
     postgresMajorVersion: "16"
