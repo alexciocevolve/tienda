@@ -1029,3 +1029,57 @@ Y los tres tienen la misma causa: **autogenerate compara esquemas, no datos**.
 | Contenedores con servidores de desarrollo | Imágenes de producción: `vite build` servido por nginx | Un `Dockerfile` de varias etapas; la migración como paso propio del despliegue |
 | Datos de PostgreSQL en un bind mount | Volumen con nombre | `down -v` vuelve a borrar la base de datos y los datos dejan de verse |
 | Sin cobertura mínima en los tests | `pytest --cov` con un umbral | Una cifra que cumplir, y tests escritos para subirla |
+
+## 12. Stripe · Decisiones de producto (fase 0)
+
+Tres líneas que llevaban ahí desde el objetivo 10, y que eran correctas mientras crear el
+pedido y cobrarlo fueran **el mismo acto**:
+
+| Dónde | Línea |
+|---|---|
+| `app/models.py:114` | `status: Mapped[str] = mapped_column(String(20), server_default="paid")` |
+| `app/services.py:215` | `products[item.product_id].stock -= item.quantity` |
+| `app/services.py:218` | `db.delete(cart)` |
+
+Al leerlas de verdad aparecieron cinco cosas que no estaban escritas en ningún sitio:
+
+- **Nadie escribe `status` jamás.** No hay una sola asignación en todo el backend. Es una
+  máquina de estados con **un** estado y ninguna transición.
+- **Pero viaja entera.** `routes/orders.py:18` la serializa a mano y `frontend/src/api.ts:121`
+  la declara en el tipo `Order`. Llega al navegador y **ninguna pantalla la pinta**.
+- **El único que la mira es un test**: `tests/test_api_orders.py:58`,
+  `assert body["status"] == "paid"`. Hay un test verde que **fija la mentira**, y es la
+  primera línea que se pondrá roja.
+- **Hoy no existe el "a medias".** Las tres líneas viven dentro de una sola transacción, un
+  único `db.commit()` en `services.py:219`: o pasa todo o no pasa nada. El problema de Stripe
+  no es cómo se llame el estado, es que **el cobro ocurre fuera de esa transacción** y por
+  primera vez en el proyecto va a poder existir un estado intermedio.
+- **No hay reloj.** Ni cron, ni scheduler, ni tarea de fondo. Y en Render los cron jobs son de
+  pago (mínimo 1 $/mes por servicio), así que un plazo no puede dar por hecho que hay un cron.
+
+### 12.1 Las tres decisiones
+
+**1 · ¿Cuándo está pagado un pedido? Solo lo dice el webhook.** Es el único que puede escribir
+`paid`. La vuelta del navegador no escribe nada: dispara una relectura del pedido y ya. El
+navegador es del cliente, se cierra y pierde la red, así que no puede ser la fuente de verdad.
+El precio de la decisión es que el webhook llega tarde, repetido y a veces desordenado — y eso
+deja de ser un accidente para convertirse en la lección: idempotencia y orden de eventos.
+
+**2 · El stock se reserva al crear el pedido, y la reserva caduca.** La línea 215 se queda
+donde está: el diff es *añadir el soltado*, no mover el descuento, y mantiene la invariante
+que el proyecto ya enseñó — no se vende lo que no hay. Lo que cuesta es el plazo, y como no
+hay reloj, **el barrido va al leer**: quien consulta el catálogo o intenta comprar suelta de
+paso las reservas vencidas. Sin infraestructura nueva y sin cron de pago.
+La alternativa descartada —descontar solo al confirmar el cobro— enseña con más fuerza que la
+verdad aterriza en el webhook, pero su modo de fallo es cobrar algo agotado, y eso obliga a
+devolver dinero en la fase 1. Demasiado pronto: la devolución es la fase 7.
+
+**3 · El carrito sigue muriendo al crear el pedido; se reintenta contra el pedido.** La línea
+218 se queda. El pedido pendiente es lo que se paga y lo que se reintenta, como en cualquier
+tienda real ("paga el pedido #123"). Si el carrito sobreviviera habría **dos fuentes de verdad
+a la vez** durante el hueco, y el contador de la cabecera no sabría cuál contar. El coste es
+que no se puede editar la cesta: o se paga el pedido o se abandona.
+
+Las tres encajan entre sí: el pedido es el documento, el pedido es lo que caduca, y el webhook
+es lo único que lo da por pagado. Abandonar el pedido es justo lo que suelta la reserva de la
+decisión 2.
