@@ -938,7 +938,13 @@ modal de detalle, debajo de la descripción.
 5. Antes de cada tag, **desde cp4**: `pytest` y `npm test` pasan enteros.
 6. Antes de cada tag: `alembic revision --autogenerate -m "check"` sobre la base al día **no genera ningún cambio**. Borrar el fichero vacío que genera.
 7. No adelantar nada de un checkpoint posterior.
-8. **Revisión de clases antes de cada tag**: en `backend/app` solo hay clases en `models.py` (una por tabla, más `Base`) y en `schemas.py` (una por cuerpo de petición). En `frontend/src`, `grep -rn "class " frontend/src` no debe devolver nada.
+8. **Revisión de clases antes de cada tag**: en `backend/app` solo hay clases en `models.py` (una por tabla, más `Base`) y en `schemas.py` (una por cuerpo de petición). En `frontend/src` no debe haber ninguna, y lo comprueba el pipeline (§9.1) buscando **declaraciones** en `.ts` y `.tsx`:
+
+    ```bash
+    grep -rnE "^[[:space:]]*(export[[:space:]]+)?(default[[:space:]]+)?(abstract[[:space:]]+)?class[[:space:]]" --include="*.ts" --include="*.tsx" frontend/src
+    ```
+
+    Esta regla empezó siendo `grep -rn "class " frontend/src`, y **falló en su segunda ejecución de verdad**: cazó un **comentario de CSS** que contenía la palabra. No había ninguna clase; la regla había leído prosa en una hoja de estilos. Se estrechó por un motivo que vale para cualquier comprobación automática: **una que da falsos positivos es una que se aprende a ignorar**, y una regla que todo el mundo ignora es peor que no tenerla, porque sigue costando un build en rojo y ya no compra nada. Comprobado en las dos direcciones: pasa limpia hoy y sigue cazando un `export default class`.
 9. **Revisión de idioma antes de cada tag**: `grep -rniE "producto|carrito|pedido|usuario|direccion|precio|sesion" backend/app backend/alembic/versions frontend/src` no debe devolver nada.
 10. **Todos los servicios, en `docker-compose.yml`**: si un checkpoint introduce un servicio nuevo, se añade en ese mismo checkpoint con su healthcheck, su `depends_on` y, si guarda datos, su bind mount visible (y esa carpeta en `.gitignore`). Nadie debe tener que arrancar nada aparte.
 11. **Probar la API, no solo la pantalla.** Los dos agujeros de seguridad del proyecto (crear pedidos sin sesión y leer el pedido de cualquiera) se encontraron llamando a la API con `curl`, no leyendo el código ni mirando el navegador.

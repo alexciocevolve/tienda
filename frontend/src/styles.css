@@ -299,7 +299,7 @@ main {
    without a legend. */
 .price-chart-tick-low {
   fill: #067647;
-  color: #067647; /* the same class is reused on <b> in the note under the chart */
+  color: #067647; /* reused on the <b> elements in the note under the chart */
   font-weight: 600;
 }
 
