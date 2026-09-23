@@ -1045,8 +1045,13 @@ Al leerlas de verdad aparecieron cinco cosas que no estaban escritas en ningún 
 
 - **Nadie escribe `status` jamás.** No hay una sola asignación en todo el backend. Es una
   máquina de estados con **un** estado y ninguna transición.
-- **Pero viaja entera.** `routes/orders.py:18` la serializa a mano y `frontend/src/api.ts:121`
-  la declara en el tipo `Order`. Llega al navegador y **ninguna pantalla la pinta**.
+- **Y se le enseña al comprador.** `routes/orders.py:18` la serializa a mano,
+  `frontend/src/api.ts:121` la declara en el tipo `Order`, y
+  `frontend/src/pages/OrderConfirmation.tsx:20` **la pinta en pantalla**: justo debajo de
+  "Thank you! Order #12" aparece la palabra `paid`. La mentira no está escondida en una
+  columna - **se la enseñamos a la cara al que acaba de comprar**, y es de lo primero que ve.
+  (Corregido el 21/09/2026: la primera versión de esta sección decía que ninguna pantalla la
+  pintaba. Era falso —solo se había mirado `OrderList.tsx`— y el hecho real es peor.)
 - **El único que la mira es un test**: `tests/test_api_orders.py:58`,
   `assert body["status"] == "paid"`. Hay un test verde que **fija la mentira**, y es la
   primera línea que se pondrá roja.

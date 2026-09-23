@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app import services
+from app import payments, services
 from app.db import get_db
 from app.models import Cart, Order, User
 from app.routes.cart import current_cart
@@ -43,6 +43,7 @@ def order_to_dict(order: Order) -> dict:
     responses={
         **NOT_SIGNED_IN,
         404: error("No cart with that X-Cart-Token"),
+        402: error("The card was refused. Nothing was charged and no order was created"),
         409: error(
             "The cart is empty, a line is short of stock, "
             "or the account has no shipping address yet"
@@ -54,17 +55,31 @@ def create_order(
     cart: Cart = Depends(current_cart),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
+    pay=Depends(payments.get_gateway),
 ):
     # Signing in is required: without a token this is a 401 and no order is created.
     # There is still no request body. Prices, the total, the buyer and the shipping
     # address are all decided by the server; the browser only says who it is, with its
     # token. A client allowed to name an address id could name somebody else's.
     try:
-        order = services.create_order(db, cart, user)
+        order = services.create_order(db, cart, user, pay)
     except ValueError as e:
         # An empty cart or a line short of stock: the request was understood and the rule
         # says no. That is 409, not 400 and not 404.
         raise HTTPException(409, str(e))
+    except payments.PaymentDeclined as e:
+        # 402, the one status code that was reserved for exactly this and that almost
+        # nobody ever gets to use. It is a defensible choice rather than an obvious one:
+        # 409 would also fit, because a refused card is a rule saying no like any other.
+        #
+        # 402 wins here for one reason - it tells the caller WHICH kind of no, without
+        # reading the sentence. A 409 from this endpoint could be an empty cart, missing
+        # stock or a missing address, and a client that wants to offer another card has to
+        # parse English to find out. 402 means "the money did not happen" and nothing else.
+        #
+        # Stripe's own wording goes straight through, because it is already written for a
+        # person: "Your card has insufficient funds."
+        raise HTTPException(402, str(e))
     response.headers["Location"] = f"/orders/{order.id}"
     return order_to_dict(order)
 

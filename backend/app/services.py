@@ -1,4 +1,5 @@
 import secrets
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select, update
@@ -148,8 +149,25 @@ def cart_total_cents(cart: Cart) -> int:
     return sum(item.product.price_cents * item.quantity for item in cart.items)
 
 
-def create_order(db: Session, cart: Cart, user: User) -> Order:
+def create_order(db: Session, cart: Cart, user: User, pay: Callable) -> Order:
     # The whole checkout is ONE transaction: everything below happens, or nothing does.
+    #
+    # And from this phase on, one of the things that happens inside it is A CALL OVER THE
+    # INTERNET. That is new, and it is the uncomfortable part of the design, so it is
+    # written down rather than hidden:
+    #
+    #   · The products above are locked with SELECT ... FOR UPDATE. While Stripe thinks,
+    #     nobody else can buy them. Stripe answering slowly becomes the shop being slow -
+    #     the concurrency test of cp4 explains why that matters.
+    #   · If the process dies between the charge and the commit, Stripe has the money and
+    #     this shop has no order. Nobody finds out until the customer complains.
+    #
+    # Moving the call outside the transaction does not fix it, it only swaps which half
+    # can be orphaned. A database transaction and a call to somebody else's server cannot
+    # be made atomic, and every phase after this one is a way of living with that.
+    #
+    # `pay` arrives as an argument instead of being imported so the tests can hand over a
+    # function that refuses, times out, or counts how many times it was called.
     if not cart.items:
         raise ValueError("The cart is empty")
 
@@ -215,9 +233,50 @@ def create_order(db: Session, cart: Cart, user: User) -> Order:
         products[item.product_id].stock -= item.quantity
 
     db.add(order)
+    # flush and not commit: this asks the database for the id without ending the
+    # transaction. The id is needed before charging, because the charge has to say which
+    # order it is paying for - and if the charge is refused, none of this ever existed.
+    db.flush()
+
+    try:
+        charge = _charge_for(pay, order, user, cart, products)
+    except Exception:
+        # The card was refused, or the gateway broke, or the network did. Either way the
+        # order has already been built and the stock already taken, so it all has to go.
+        #
+        # This rollback is written down rather than left to chance. get_db closes the
+        # session when the request ends and that WOULD undo the flush - but "somebody
+        # downstream will clean this up" is a bad thing to rely on for the one path where
+        # the shop has just taken stock off the shelf and failed to get paid for it. It
+        # also means the service behaves the same when it is called outside a request.
+        db.rollback()
+        raise
+    order.payment_intent_id = charge.payment_intent_id
+
     db.delete(cart)  # the lines go with it, and the cart has served its purpose
     db.commit()
     return order
+
+
+def _charge_for(pay: Callable, order: Order, user: User, cart: Cart, products: dict):
+    """Build what the gateway is told about this order, and ask it to charge."""
+    lines = [f"{item.quantity} x {products[item.product_id].name}" for item in cart.items]
+    return pay(
+        amount_cents=order.total_cents,
+        # What the buyer reads on the receipt Stripe sends them.
+        description=f"Order #{order.id}: " + ", ".join(lines),
+        # What we read in the Stripe dashboard. Never shown to the buyer. Values are
+        # capped at 500 characters by Stripe, so a very long order is cut rather than
+        # rejected - the lines live in order_items anyway, this is only for looking things
+        # up by eye. order_id is the one that matters: it is what turns a payment in their
+        # dashboard back into an order in ours.
+        metadata={
+            "order_id": str(order.id),
+            "user_id": str(user.id),
+            "items": "; ".join(lines)[:500],
+        },
+        receipt_email=order.customer_email,
+    )
 
 
 def list_orders(db: Session, user: User) -> list[Order]:

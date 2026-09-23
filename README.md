@@ -39,6 +39,38 @@ docker compose up --build
 Para parar todo: `docker compose down`. El código va dentro de las imágenes: tras cambiarlo hay que
 repetir `docker compose up --build`. Para trabajar con recarga en caliente, usa la opción B.
 
+#### Si algo consume CPU y no se sabe qué
+
+Lo primero, sin instalar nada, es ver el reparto por contenedor:
+
+```bash
+docker compose stats
+```
+
+Si el culpable es el backend, hace falta mirar **dentro** del proceso. La imagen del backend
+es deliberadamente mínima —no lleva ni `ps`, porque es la que se despliega— así que las
+herramientas viven en un contenedor aparte que solo existe cuando se pide:
+
+```bash
+docker compose --profile debug up -d debug
+```
+
+```bash
+docker compose exec debug sh -c 'py-spy dump --pid $(pgrep -x uvicorn)'
+```
+
+(El PID 1 **no** es uvicorn, es el `sh` que lanza las migraciones y luego el servidor; y
+`pgrep -f uvicorn` tampoco vale, porque también caza a ese `sh`, cuya línea de comandos
+contiene la palabra. De ahí el `-x`, que compara el nombre del proceso y no la línea.)
+
+`py-spy` es el que responde de verdad a «qué hilo está quemando CPU» en un proceso Python:
+`htop` dice *uvicorn, 100%*, y `py-spy` dice **en qué función**. También hay `htop` dentro
+(`docker compose exec debug htop`) para la vista de siempre. El contenedor comparte el
+espacio de procesos del backend, por eso ve sus hilos; y se lleva `SYS_PTRACE`, que es el
+permiso que necesita un depurador para leer la memoria de otro proceso.
+
+Cuando termines: `docker compose --profile debug down`.
+
 #### Dónde están los datos de la base de datos
 
 Los ficheros de PostgreSQL están en [`data/postgres/`](data), una carpeta de tu propio disco montada en
