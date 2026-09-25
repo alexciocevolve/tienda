@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app import payments
 from app.models import (
     Address,
     Cart,
@@ -149,25 +150,16 @@ def cart_total_cents(cart: Cart) -> int:
     return sum(item.product.price_cents * item.quantity for item in cart.items)
 
 
-def create_order(db: Session, cart: Cart, user: User, pay: Callable) -> Order:
-    # The whole checkout is ONE transaction: everything below happens, or nothing does.
+def create_order(db: Session, cart: Cart, user: User) -> Order:
+    # The whole thing is ONE transaction: everything below happens, or nothing does.
     #
-    # And from this phase on, one of the things that happens inside it is A CALL OVER THE
-    # INTERNET. That is new, and it is the uncomfortable part of the design, so it is
-    # written down rather than hidden:
+    # And no network call happens inside it any more, which is a real improvement that came
+    # for free. Objective 16 charged the card right here, holding SELECT ... FOR UPDATE on
+    # the products while Stripe thought about it - the shop's locks were hostage to somebody
+    # else's latency. Now creating the order and paying for it are two acts, so the
+    # transaction closes before anybody talks to Stripe.
     #
-    #   · The products above are locked with SELECT ... FOR UPDATE. While Stripe thinks,
-    #     nobody else can buy them. Stripe answering slowly becomes the shop being slow -
-    #     the concurrency test of cp4 explains why that matters.
-    #   · If the process dies between the charge and the commit, Stripe has the money and
-    #     this shop has no order. Nobody finds out until the customer complains.
-    #
-    # Moving the call outside the transaction does not fix it, it only swaps which half
-    # can be orphaned. A database transaction and a call to somebody else's server cannot
-    # be made atomic, and every phase after this one is a way of living with that.
-    #
-    # `pay` arrives as an argument instead of being imported so the tests can hand over a
-    # function that refuses, times out, or counts how many times it was called.
+    # What it costs: the order now exists WITHOUT BEING PAID. That is the whole objective.
     if not cart.items:
         raise ValueError("The cart is empty")
 
@@ -233,50 +225,63 @@ def create_order(db: Session, cart: Cart, user: User, pay: Callable) -> Order:
         products[item.product_id].stock -= item.quantity
 
     db.add(order)
-    # flush and not commit: this asks the database for the id without ending the
-    # transaction. The id is needed before charging, because the charge has to say which
-    # order it is paying for - and if the charge is refused, none of this ever existed.
-    db.flush()
-
-    try:
-        charge = _charge_for(pay, order, user, cart, products)
-    except Exception:
-        # The card was refused, or the gateway broke, or the network did. Either way the
-        # order has already been built and the stock already taken, so it all has to go.
-        #
-        # This rollback is written down rather than left to chance. get_db closes the
-        # session when the request ends and that WOULD undo the flush - but "somebody
-        # downstream will clean this up" is a bad thing to rely on for the one path where
-        # the shop has just taken stock off the shelf and failed to get paid for it. It
-        # also means the service behaves the same when it is called outside a request.
-        db.rollback()
-        raise
-    order.payment_intent_id = charge.payment_intent_id
-
     db.delete(cart)  # the lines go with it, and the cart has served its purpose
     db.commit()
     return order
 
 
-def _charge_for(pay: Callable, order: Order, user: User, cart: Cart, products: dict):
-    """Build what the gateway is told about this order, and ask it to charge."""
-    lines = [f"{item.quantity} x {products[item.product_id].name}" for item in cart.items]
-    return pay(
-        amount_cents=order.total_cents,
-        # What the buyer reads on the receipt Stripe sends them.
-        description=f"Order #{order.id}: " + ", ".join(lines),
-        # What we read in the Stripe dashboard. Never shown to the buyer. Values are
-        # capped at 500 characters by Stripe, so a very long order is cut rather than
-        # rejected - the lines live in order_items anyway, this is only for looking things
-        # up by eye. order_id is the one that matters: it is what turns a payment in their
-        # dashboard back into an order in ours.
-        metadata={
-            "order_id": str(order.id),
-            "user_id": str(user.id),
-            "items": "; ".join(lines)[:500],
-        },
-        receipt_email=order.customer_email,
+def start_checkout(db: Session, order: Order, gateway) -> str:
+    """Hand the order over to Stripe and return where to send the buyer.
+
+    Separate from create_order on purpose, and not just for tidiness: they are now two
+    different acts with a gap between them that the shop does not control. The order exists
+    at the end of the first one and nobody has paid; the second one only opens a door.
+
+    The lines go over as REAL line items, which the previous design could not do - a
+    PaymentIntent takes one number. So the product names and quantities appear on Stripe's
+    page and on the receipt, which is what a buyer needs to recognise what they are paying
+    for.
+    """
+    lines = [
+        {
+            "price_data": {
+                "currency": payments.CURRENCY,
+                "product_data": {"name": item.product.name},
+                # The price FROZEN on the order, not today's catalogue price. If somebody
+                # edits the product while this customer is typing their card, they still
+                # pay what they were shown.
+                "unit_amount": item.price_cents,
+            },
+            "quantity": item.quantity,
+        }
+        for item in order.items
+    ]
+    checkout = gateway.start(
+        order_id=order.id, lines=lines, customer_email=order.customer_email
     )
+    order.checkout_session_id = checkout.session_id
+    db.commit()
+    return checkout.url
+
+
+def confirm_order(db: Session, order: Order) -> Order:
+    """Mark the order paid because the browser came back saying so.
+
+    READ THIS BEFORE COPYING IT. It believes whoever calls it, and that is wrong in two
+    ways that the next objective demonstrates rather than argues:
+
+      · Anyone can call it. It checks nothing against Stripe, so a `curl` buys goods.
+      · It only runs if the buyer comes back. Close the tab after paying and the money is
+        gone and the order stays pending, with nobody to notice.
+
+    It is written this way deliberately, because it is what almost every first integration
+    does, and because Stripe itself warns against it in the same page that explains how:
+    "Activar la gestion logistica solo desde tu pagina de exito de Checkout no es fiable."
+    That sentence is worth reading AFTER having seen it break, not before.
+    """
+    order.status = "paid"
+    db.commit()
+    return order
 
 
 def list_orders(db: Session, user: User) -> list[Order]:
